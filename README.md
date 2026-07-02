@@ -114,8 +114,8 @@ This package is intended for robotic applications involving dense surface trajec
 
 - Polishing
 - Grinding
-- Sanding
 - Painting
+- Sanding
 - Surface inspection
 - Additive manufacturing (3D printing)
 - Cleaning
