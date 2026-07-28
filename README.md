@@ -82,6 +82,7 @@ Add the following line to your `~/.bashrc`:
 
 ```bash
 export CNR_PARAM_ROOT_DIRECTORY="/tmp/cnr_param"
+export IK_SOLVER_LOGGER_CONFIG_PATH="${HOME}/projects/ros2_ws/install/ik_solver_core/share/ik_solver_core/config/default_logger.yaml"
 ```
 
 Reload your shell:

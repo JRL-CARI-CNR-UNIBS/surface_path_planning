@@ -50,21 +50,37 @@ set(ROS_DEPS
     moveit_ros_planning_interface
     )
 
+
+
+add_library(surface_path_planning SHARED
+    src/surface_path_planning/utils.cpp
+    src/surface_path_planning/surface_path_planning.cpp
+    src/surface_path_planning/robot_description_node.cpp
+)
+target_include_directories(surface_path_planning PUBLIC
+        $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
+
+target_compile_features(surface_path_planning PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
+
+target_link_libraries(surface_path_planning
+  PUBLIC
+    graph_core::graph_core
+    ik_solver::ik_solver
+    graph_display::graph_display
+    moveit_collision_checker::moveit_collision_checker
+)
+# Create an alias for the library to link against easily
+add_library(surface_path_planning::surface_path_planning ALIAS surface_path_planning)
+
 add_executable(simple_test_1 src/simple_test_1.cpp)
 target_include_directories(simple_test_1 PUBLIC
   $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include/${PROJECT_NAME}>)
 
 target_compile_features(simple_test_1 PUBLIC c_std_99 cxx_std_17)  # Require C99 and C++17
-target_link_directories(simple_test_1 PUBLIC
-graph_core::graph_core
-ur_ik_solver::ur_ik_solver
-#moveit_collision_checker::moveit_collision_checker
-#moveit_msgs::moveit_msgs
-#visualization_msgs::visualization_msgs
-#moveit_visual_tools::moveit_visual_tools
-#tf2_eigen::tf2_eigen
-#urdf::urdfdom
+target_link_libraries(simple_test_1
+    surface_path_planning::surface_path_planning
 )
 
 ament_target_dependencies(simple_test_1 control_msgs ${ROS_DEPS})
@@ -73,7 +89,7 @@ ament_target_dependencies(simple_test_1 control_msgs ${ROS_DEPS})
 ament_export_dependencies(${DEPS_LIB} ${ROS_DEPS})
 
 install(TARGETS
-        simple_test_1
+        simple_test_1 surface_path_planning
     DESTINATION lib/${PROJECT_NAME}
     )
 
