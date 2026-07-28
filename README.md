@@ -123,6 +123,20 @@ This package is intended for robotic applications involving dense surface trajec
 
 ---
 
+## How to run 
+
+Terminal 1: 
+```
+ros2 launch sharework_cembre_bringup sharework_cembre_bringup.launch.py     fake_ur:=true     fake_gripper:=true     robotiq_use_socket_communication:=true     enable_zed_camera:=false     enable_dual_realsense:=false     launch_rviz:=true     robotiq_activate_gripper_by_default:=1     enable_wrist_camera:=true
+```
+
+Terminal 2:
+```
+ros2 launch surface_path_planning test_solver.launch.py 
+```
+
+---
+
 ## License
 
 See the `LICENSE` file for license information.
