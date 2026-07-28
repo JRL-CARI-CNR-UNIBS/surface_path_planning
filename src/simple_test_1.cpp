@@ -6,6 +6,7 @@ int main(int argc, char **argv)
 {
   rclcpp::init(argc, argv);
 
+  // Initialize the robot description node and wait for the robot description to be received.
   auto robot_description_node = std::make_shared<surface_path_planning::RobotDescriptionNode>();
   rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 2);
   executor.add_node(robot_description_node);
@@ -13,6 +14,7 @@ int main(int argc, char **argv)
   auto start_time = std::chrono::steady_clock::now();
   std::chrono::seconds timeout_duration(30);
 
+  // wait for robot description (timeout 30 seconds)
   while (rclcpp::ok() && !robot_description_node->isRobotDescriptionReceived()) {
     executor.spin_some();
     rclcpp::sleep_for(std::chrono::milliseconds(100));
@@ -26,7 +28,7 @@ int main(int argc, char **argv)
   std::string urdf_payload = robot_description_node->getRobotDescription();
   robot_description_node.reset();
 
-  //
+  // planner is a shared_ptr to surface_path_planning::SurfacePlannerNode
   auto planner_node = std::make_shared<surface_path_planning::SurfacePlannerNode>();
 
   // prima il plan poi l'execute, dopo conferma utente y/n
