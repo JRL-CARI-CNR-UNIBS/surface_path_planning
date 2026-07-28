@@ -46,6 +46,7 @@ bool SurfacePlannerNode::executePlanning(const std::string& robot_desc_string)
   display_->displayTree(tree_, "graph_display", {0.0, 0.0, 1.0, 0.15});
 
 
+  //display_->displayPathAndWaypoints(solution2, "path2_display",{0,1,0,1.0});
 
   return true;
 }
