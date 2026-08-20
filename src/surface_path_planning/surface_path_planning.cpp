@@ -34,19 +34,103 @@ bool SurfacePlannerNode::executePlanning(const std::string& robot_desc_string)
 
   // Read start/goal states from parameters and bootstrap tree endpoints.
   graph::core::get_param(logger_, param_ns2_, "start_configuration", start_conf_);
-  graph::core::get_param(logger_, param_ns2_, "goal_configuration_1", goal_conf_);
+  graph::core::get_param(logger_, param_ns2_, "goal_configuration_1", goal_conf_1);
+  // Aggiunta per modifica
+  graph::core::get_param(logger_, param_ns2_, "goal_configuration_2", goal_conf_2);
 
   graph::core::PathPtr solution1;
+  goal_conf_ = goal_conf_1;
   if (!executeRrtLoop(solution1)) {
     RCLCPP_ERROR(this->get_logger(), "Failed to execute RRT loop");
     return false;
   }
+
+  // Aggiunta per modifica
+  //resetTree();
+  graph::core::PathPtr solution2;
+  // usa goal_configuration_2
+  goal_conf_ = goal_conf_2;
+
+  // Per far sì che start configuration sia corretta
+  graph::core::get_param(logger_, param_ns2_, "start_configuration", start_conf_);
+
+  if (!executeRrtLoop(solution2)) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to execute RRT loop");
+    return false;
+  }
+
   RCLCPP_INFO_STREAM(this->get_logger(), "RRT loop done.");
   display_->displayPathAndWaypoints(solution1, "path1_display",{1,0,0,1.0});
-  display_->displayTree(tree_, "graph_display", {0.0, 0.0, 1.0, 0.15});
+  display_->displayTree(tree_, "graph1_display", {0.0, 0.0, 1.0, 0.15});
+
+  // Aggiunta per modifica
+  display_->displayPathAndWaypoints(solution2, "path2_display",{0,1,0,1.0});
+  display_->displayTree(tree_, "graph2_display", {0.0, 1.0, 0.0, 0.15});
+
+  return true;
+}
+
+bool SurfacePlannerNode::executePlanningCartesian(const std::string& robot_desc_string)
+{
+  // High-level pipeline:
+  // 1) Read all runtime parameters and logger configuration.
+  // 2) Build and synchronize the planning scene from move_group.
+  // 3) Instantiate checker/sampler/metrics/IK plugins.
+  // 4) Run the RRT loop until a valid path is found.
+  loadParameters();
+  if (!initPlanningScene()) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to initialize");
+    return false;
+  }
+  RCLCPP_INFO_STREAM(this->get_logger(), "Planning scene Ok");
+
+  if (!initPlugins(robot_desc_string)) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to initialize plugins");
+    return false;
+  }
+  RCLCPP_INFO_STREAM(this->get_logger(), "initPlugins Ok");
 
 
-  //display_->displayPathAndWaypoints(solution2, "path2_display",{0,1,0,1.0});
+  // Read start/goal states from parameters and bootstrap tree endpoints.
+  graph::core::get_param(logger_, param_ns2_, "start_configuration", start_conf_);
+  graph::core::get_param(logger_, param_ns2_, "goal_pose/position", goal_position_);
+  graph::core::get_param(logger_, param_ns2_, "goal_pose/orientation", goal_orientation_);
+  // define pose (aka transformation, rototraslation)
+  Eigen::Affine3d T_b_flange = Eigen::Affine3d::Identity();
+
+  Eigen::Quaterniond q(goal_orientation_(3), goal_orientation_(0), goal_orientation_(1), goal_orientation_(2));
+  T_b_flange.linear() = q.toRotationMatrix(); // IMPORTANT: linear is the rotation part
+
+  T_b_flange.translation() = goal_position_;
+
+  ik_solver::Configurations seeds = {start_conf_};
+  ik_solver::Solutions ik_solutions =ik_solver_->getIk(T_b_flange, seeds);
+  // ik_solver::Solutions contains: list of solutions,
+  // translation residues (error between the desired pose and the solutions one),
+  // orientation residues (error between the desired pose and the solutions one),
+
+
+  if (ik_solutions.configurations().empty()) {
+    RCLCPP_ERROR(this->get_logger(), "Failed to find inverse kinematics solution");
+    return false;
+  }
+
+  int idx_solution = 0;
+  for (const ik_solver::Configuration& ik_solution: ik_solutions.configurations())
+  {
+    RCLCPP_INFO_STREAM(this->get_logger(), "Found IK solution " << idx_solution << ": " << ik_solution.transpose());
+    goal_conf_ = ik_solution;
+
+    graph::core::PathPtr path_solution;
+    if (!executeRrtLoop(path_solution)) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to execute RRT loop");
+      return false;
+    }
+    RCLCPP_INFO_STREAM(this->get_logger(), "RRT loop done.");
+    display_->displayPathAndWaypoints(path_solution, "path" + std::to_string(idx_solution) + "_display", {1,0,0,1.0});
+    display_->displayTree(tree_, "graph_display", {0.0, 0.0, 1.0, 0.15});
+    idx_solution++;
+  }
 
   return true;
 }

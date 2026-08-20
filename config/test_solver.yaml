@@ -3,9 +3,16 @@ surface_path_planning:
         group_name: "ur_robot"
         start_configuration: [1.570796327,-2.443460953,2.443460953,-1.570796327,1.570796327,0.0] # home position for the sharework ur10e
         goal_configuration_1:  [0.785398,-1.5708,2.35619,-2.26893,1.5708,-0.785398]
+        goal_configuration_2: [0.785398, -1.45, 2.25, -2.26893, 1.5708, -0.785398]
+        
+        goal_pose:
+            position: [-0.174, 0.222, 0.72]
+            # position: [-0.174, 0.222, 0.691]
+            orientation: [0.001, -0.000, 1.000, 0.000]
+        
         utopia_tolerance: 0.05 # tolerance wrt best solution
         extend: true # if true steps towards next point are truncated at max_distance length
-        max_distance: 0.1 # to be used with extend: true
+        max_distance: 0.001 # to be used with extend: true
         use_kdtree: true 
         checker_resolution: 0.01
         parallel_checker_n_threads: 4

@@ -25,6 +25,7 @@ public:
    * and executes the core RRT planning pipeline loop.
    */
   bool executePlanning(const std::string& robot_desc_string);
+  bool executePlanningCartesian(const std::string& robot_desc_string);
 
 private:
   void loadParameters();
@@ -58,7 +59,8 @@ private:
 
   // Joint Bounds and Config Targets
   Eigen::VectorXd lb_, ub_;
-  Eigen::VectorXd start_conf_, goal_conf_;
+  Eigen::VectorXd start_conf_, goal_conf_,goal_conf_1,goal_conf_2;
+  Eigen::VectorXd goal_position_, goal_orientation_;
 
   // Missing placeholder variables declared here as members to avoid compile failure.
   // These should be mapped to actual configuration constants or runtime params.
