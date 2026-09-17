@@ -12,7 +12,7 @@ surface_path_planning:
         
         utopia_tolerance: 0.05 # tolerance wrt best solution
         extend: true # if true steps towards next point are truncated at max_distance length
-        max_distance: 0.001 # to be used with extend: true
+        max_distance: 1.0 # to be used with extend: true
         use_kdtree: true 
         checker_resolution: 0.01
         parallel_checker_n_threads: 4

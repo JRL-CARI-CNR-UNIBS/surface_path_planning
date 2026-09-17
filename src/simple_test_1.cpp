@@ -33,7 +33,7 @@ int main(int argc, char **argv)
 
   // prima il plan poi l'execute, dopo conferma utente y/n
 
-  if (planner_node->executePlanningCartesian(urdf_payload)) {
+  if (planner_node->executePlanning(urdf_payload)) {
     RCLCPP_INFO(planner_node->get_logger(), "Planning pipeline execution finished. Keeping node spin active for visualization persistence.");
     rclcpp::spin(planner_node);
   }

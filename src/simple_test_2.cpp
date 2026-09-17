@@ -32,7 +32,7 @@ int main(int argc, char **argv)
   auto planner_node = std::make_shared<surface_path_planning::SurfacePlannerNode>();
 
   // prima il plan poi l'execute, dopo conferma utente y/n
-
+  RCLCPP_INFO(planner_node->get_logger(), "Planning pipeline execution started.");
   if (planner_node->executePlanningCartesian(urdf_payload)) {
     RCLCPP_INFO(planner_node->get_logger(), "Planning pipeline execution finished. Keeping node spin active for visualization persistence.");
     rclcpp::spin(planner_node);

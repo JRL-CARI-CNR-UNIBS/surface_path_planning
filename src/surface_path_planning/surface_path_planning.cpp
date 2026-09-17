@@ -2,6 +2,7 @@
 #include <ament_index_cpp/get_package_share_directory.hpp>
 #include <moveit_msgs/srv/get_planning_scene.hpp>
 #include <fstream>
+#include <map>
 
 namespace surface_path_planning {
 
@@ -46,7 +47,6 @@ bool SurfacePlannerNode::executePlanning(const std::string& robot_desc_string)
   }
 
   // Aggiunta per modifica
-  //resetTree();
   graph::core::PathPtr solution2;
   // usa goal_configuration_2
   goal_conf_ = goal_conf_2;
@@ -77,6 +77,13 @@ bool SurfacePlannerNode::executePlanningCartesian(const std::string& robot_desc_
   // 2) Build and synchronize the planning scene from move_group.
   // 3) Instantiate checker/sampler/metrics/IK plugins.
   // 4) Run the RRT loop until a valid path is found.
+
+  RCLCPP_INFO_STREAM(this->get_logger(), "executePlanningCartesian started");
+
+  // Faccio il reset dell'albero
+  //display_->resetTree();
+  //RCLCPP_INFO_STREAM(this->get_logger(), "Reset the tree: done");
+
   loadParameters();
   if (!initPlanningScene()) {
     RCLCPP_ERROR(this->get_logger(), "Failed to initialize");
@@ -89,7 +96,6 @@ bool SurfacePlannerNode::executePlanningCartesian(const std::string& robot_desc_
     return false;
   }
   RCLCPP_INFO_STREAM(this->get_logger(), "initPlugins Ok");
-
 
   // Read start/goal states from parameters and bootstrap tree endpoints.
   graph::core::get_param(logger_, param_ns2_, "start_configuration", start_conf_);
@@ -109,13 +115,55 @@ bool SurfacePlannerNode::executePlanningCartesian(const std::string& robot_desc_
   // translation residues (error between the desired pose and the solutions one),
   // orientation residues (error between the desired pose and the solutions one),
 
-
+  RCLCPP_INFO_STREAM(this->get_logger(), "getIk done");
   if (ik_solutions.configurations().empty()) {
     RCLCPP_ERROR(this->get_logger(), "Failed to find inverse kinematics solution");
     return false;
   }
+  
+  // Ordini le soluzioni, da quella meno distante a quella più distante con una struttura di tipo chiave-valore
+  // La chiave è la distanza, il valore è la soluzione della cinematica inversa
+  std::map<double,ik_solver::Configuration> ordered_solutions;
+  for (const ik_solver::Configuration& ik_solution: ik_solutions.configurations())
+  {
+    double distance = -(ik_solution- start_conf_).norm();
+    std::pair<double,ik_solver::Configuration> p(distance,ik_solution);
+    ordered_solutions.insert(p);
+  }
+  RCLCPP_INFO_STREAM(this->get_logger(), "Found  IK solutions: " << ordered_solutions.size());
 
+  
   int idx_solution = 0;
+  int total_solutions = ordered_solutions.size();
+  int solution_failed = 0;
+  for (const std::pair<double,ik_solver::Configuration> p: ordered_solutions)
+  {
+
+    if (idx_solution > (6+solution_failed)) {
+      RCLCPP_ERROR(this->get_logger(), "Reached the maximum number of solutions");
+      break;
+    }
+
+    double dist = p.first;
+    ik_solver::Configuration ik_solution = p.second;
+    RCLCPP_INFO_STREAM(this->get_logger(), "Found IK solution nr " << idx_solution << " of " << total_solutions <<
+      " -> " << ik_solution.transpose());
+    goal_conf_ = ik_solution;
+
+    graph::core::PathPtr path_solution;
+    if (!executeRrtLoop(path_solution)) {
+      RCLCPP_ERROR(this->get_logger(), "Failed to execute RRT loop");
+      solution_failed++;
+      return false;
+    }
+    RCLCPP_INFO_STREAM(this->get_logger(), "RRT loop done.");
+    display_->displayPathAndWaypoints(path_solution, "path" + std::to_string(idx_solution) + "_display", {1,0,0,1.0});
+    display_->displayTree(tree_, 24,  "graph_display", {0.0, 0.0, 1.0, 0.15});
+    idx_solution++;
+  }
+
+  /*
+  idx_solution = 0;
   for (const ik_solver::Configuration& ik_solution: ik_solutions.configurations())
   {
     RCLCPP_INFO_STREAM(this->get_logger(), "Found IK solution " << idx_solution << ": " << ik_solution.transpose());
@@ -131,6 +179,7 @@ bool SurfacePlannerNode::executePlanningCartesian(const std::string& robot_desc_
     display_->displayTree(tree_, "graph_display", {0.0, 0.0, 1.0, 0.15});
     idx_solution++;
   }
+  */
 
   return true;
 }
@@ -287,6 +336,8 @@ bool SurfacePlannerNode::executeRrtLoop(graph::core::PathPtr& solution)
 
   // Tree grows from start, using configured metric/collision checker and
   // optional KD-tree acceleration (use_kdtree runtime parameter).
+  start_node->disconnectChildConnections();
+
   tree_ = std::make_shared<graph::core::Tree>(start_node, max_distance, checker_, metrics_, logger_, use_kdtree);
 
   Eigen::VectorXd qrand;
