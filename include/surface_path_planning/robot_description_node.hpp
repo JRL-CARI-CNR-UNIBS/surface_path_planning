@@ -14,9 +14,18 @@ namespace surface_path_planning {
     {
         using Ptr = std::shared_ptr<RobotDescriptionNode>;
     public:
+        /**
+         * @brief Subscribe to /robot_description (transient local).
+         */
         RobotDescriptionNode();
 
+        /**
+         * @brief True once the URDF has been received.
+         */
         bool isRobotDescriptionReceived() const;
+        /**
+         * @brief The received URDF (empty until received).
+         */
         std::string getRobotDescription() const;
 
     private:

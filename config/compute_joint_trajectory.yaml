@@ -1,0 +1,14 @@
+# ROS parameters of the time parametrization server (package time_parametrization).
+# It retimes the joint path computed by compute_joint_path with MoveIt TOTG.
+compute_joint_trajectory:
+  ros__parameters:
+    action_name: compute_joint_trajectory    # i.e. /compute_joint_trajectory
+    robot_description_param: robot_description
+    default_group_name: ur_robot             # MoveIt planning group (same as compute_joint_path)
+
+    # One entry per planning group (YAML sequence passed as a string).
+    group_configs_yaml: |
+      - group_name: "ur_robot"
+        resample_dt: 0.01          # [s] sampling time of the output trajectory
+        path_tolerance: 0.001      # [rad] blending tolerance of TOTG
+        min_angle_change: 0.001    # [rad] closer points are merged

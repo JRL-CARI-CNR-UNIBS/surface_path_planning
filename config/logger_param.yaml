@@ -1,0 +1,4 @@
+appenders: ["screen"]
+levels: ["warn"]
+pattern_layout: '[%M:%L]: %m%n'
+file_name: "surface_path_planning"

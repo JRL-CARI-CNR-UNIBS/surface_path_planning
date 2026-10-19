@@ -1,0 +1,28 @@
+# ROS parameters of the compute_joint_path action server.
+compute_joint_path:
+  ros__parameters:
+    group_name: ur_robot                     # MoveIt planning group
+    ik_solver_namespace: /ur_ik_solver       # namespace of the ik_solver node (first key of the IK config file)
+    joint_states_topic: /joint_states
+    planning_scene_service: /get_planning_scene
+
+    service_timeout: 10.0                    # [s] timeout of change_tool and get_planning_scene
+    ik_timeout: 120.0                        # [s] timeout of get_task_redundant_ik_array
+    joint_state_timeout: 5.0                 # [s] wait for a complete joint state
+
+    # Path construction
+    max_joint_step: 0.35                     # [rad] max joint motion (inf norm) between two consecutive surface points
+    max_deviation_joint_step: 0.8            # [rad] max joint motion (inf norm) between a surface point and its leave/approach point
+    multigoal_action: /parallel_multigoal_plan
+    multigoal_planning_time: 5.0             # [s] allowed_planning_time of one multigoal request
+    collision_check_service: /collision_check   # planner collision checker, queried (detailed) when a request fails
+    max_multigoal_goals: 20                  # candidate configurations sent in one multigoal request
+    max_backtracking_poses: 20               # surface poses that can be dropped when the surface cannot be left
+
+    # Rviz visualization (moveit_msgs/DisplayTrajectory, latched)
+    display_topic: ~/display_path            # i.e. /compute_joint_path/display_path
+    display_time_step: 1.0                   # [s] fake time between consecutive points, only for the animation
+
+    # Collision checking
+    checker_resolution: 0.02                 # [rad] discretization of the straight joint motions
+    checker_threads: 4

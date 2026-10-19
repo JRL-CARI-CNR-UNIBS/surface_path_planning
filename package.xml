@@ -2,10 +2,12 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>surface_path_planning</name>
-  <version>0.0.0</version>
-  <description>TODO: Package description</description>
-  <maintainer email="manuel.beschi@unibs.it">jacobi</maintainer>
-  <license>TODO: License declaration</license>
+  <version>0.1.0</version>
+  <description>Joint-space path planning for robotic surface operations: converts a tool PoseArray into a joint path exploiting task redundancy. Developed by CARI-JRL.</description>
+  <maintainer email="manuel.beschi@unibs.it">Manuel Beschi (CARI-JRL)</maintainer>
+  <license>Apache-2.0</license>
+  <author email="manuel.beschi@unibs.it">Manuel Beschi</author>
+  <author>Elisa Zappa</author>
 
   <depend>moveit_collision_checker</depend>
   <buildtool_depend>ament_cmake</buildtool_depend>
@@ -26,6 +28,21 @@
 
   <buildtool_depend>rosidl_default_generators</buildtool_depend>
   <depend>control_msgs</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_action</depend>
+  <depend>ament_index_cpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>trajectory_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>moveit_msgs</depend>
+  <depend>ik_solver_msgs</depend>
+  <depend>surface_path_planning_msgs</depend>
+  <depend>parallel_multigoal_planner_msgs</depend>
+  <exec_depend>parallel_multigoal_planner</exec_depend>
+  <exec_depend>collision_checker_server</exec_depend>
+  <exec_depend>surface_raster_planner_msgs</exec_depend>
+  <exec_depend>time_parametrization</exec_depend>
+  <exec_depend>time_parametrization_msgs</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>

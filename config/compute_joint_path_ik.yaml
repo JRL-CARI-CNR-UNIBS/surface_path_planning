@@ -1,0 +1,32 @@
+# ik_solver configuration used by compute_joint_path.
+# The first-level key is the namespace of the ik_solver node (ROS parameter 'ik_solver_namespace').
+ur_ik_solver:
+  type: ik_solver/Ur10eIkSolver
+  base_frame: ur10e_base_link    # base frame of the chain
+  flange_frame: ur10e_tool0      # end frame of the chain
+  tool_frame: ur10e_tool0        # replaced at each goal by goal.planning_frame (change_tool service)
+  desired_solutions: 32
+  joint_names:
+  - ur10e_shoulder_pan_joint
+  - ur10e_shoulder_lift_joint
+  - ur10e_elbow_joint
+  - ur10e_wrist_1_joint
+  - ur10e_wrist_2_joint
+  - ur10e_wrist_3_joint
+
+  min_stall_iterations: 100
+  max_stall_iterations: 1000
+  parallel_ik_mode: 2
+
+  # Keep only one configuration among the ones that differ by 2*pi on a revolute joint.
+  filter_duplicates: true
+
+  # Task redundancy: each pose is also solved after these perturbations (expressed in the tool frame).
+  # A rotation around the tool z axis (the surface normal) does not change the process for
+  # symmetric tools. Set the yaw range to zero for tools with a working direction.
+  task_redundant:
+    type: grid
+    yaw:
+      min: -0.5236             # -30 deg
+      max: 0.5236              # +30 deg
+      step: 0.2618             # 15 deg

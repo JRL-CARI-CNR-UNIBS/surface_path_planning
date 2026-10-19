@@ -23,6 +23,13 @@ find_package(moveit_ros_planning_interface REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 
 find_package(control_msgs REQUIRED)
+find_package(rclcpp_action REQUIRED)
+find_package(ament_index_cpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(trajectory_msgs REQUIRED)
+find_package(ik_solver_msgs REQUIRED)
+find_package(surface_path_planning_msgs REQUIRED)
+find_package(parallel_multigoal_planner_msgs REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -55,6 +62,8 @@ add_library(surface_path_planning SHARED
     src/surface_path_planning/utils.cpp
     src/surface_path_planning/surface_path_planning.cpp
     src/surface_path_planning/robot_description_node.cpp
+    src/surface_path_planning/joint_path_builder.cpp
+    src/surface_path_planning/compute_joint_path_server.cpp
 )
 target_include_directories(surface_path_planning PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
@@ -68,6 +77,17 @@ target_link_libraries(surface_path_planning
     ik_solver::ik_solver
     graph_display::graph_display
     moveit_collision_checker::moveit_collision_checker
+)
+ament_target_dependencies(surface_path_planning PUBLIC
+  rclcpp_action
+  ament_index_cpp
+  sensor_msgs
+  trajectory_msgs
+  ik_solver_msgs
+  surface_path_planning_msgs
+  parallel_multigoal_planner_msgs
+  moveit_msgs
+  ${ROS_DEPS}
 )
 # Create an alias for the library to link against easily
 add_library(surface_path_planning::surface_path_planning ALIAS surface_path_planning)
@@ -98,13 +118,24 @@ target_link_libraries(simple_test_2
 ament_target_dependencies(simple_test_2 control_msgs ${ROS_DEPS})
 
 
+# compute_joint_path action server
+add_executable(compute_joint_path_node src/compute_joint_path_node.cpp)
+target_compile_features(compute_joint_path_node PUBLIC c_std_99 cxx_std_17)
+target_link_libraries(compute_joint_path_node
+    surface_path_planning::surface_path_planning
+)
+ament_target_dependencies(compute_joint_path_node ${ROS_DEPS})
+
 #ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_dependencies(${DEPS_LIB} ${ROS_DEPS})
 
 install(TARGETS
-        simple_test_1 simple_test_2 surface_path_planning
+        simple_test_1 simple_test_2 compute_joint_path_node surface_path_planning
     DESTINATION lib/${PROJECT_NAME}
     )
+
+install(PROGRAMS scripts/send_raster_to_joint_path.py
+    DESTINATION lib/${PROJECT_NAME})
 
 install(DIRECTORY launch config
     DESTINATION share/${PROJECT_NAME})

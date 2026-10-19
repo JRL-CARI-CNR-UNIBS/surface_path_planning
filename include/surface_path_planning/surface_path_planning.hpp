@@ -1,3 +1,7 @@
+/**
+ * @file surface_path_planning.hpp
+ * @brief Test node that plans with graph_core RRT* between configurations (used by simple_test_1/2).
+ */
 #pragma once
 
 #include <rclcpp/rclcpp.hpp>
@@ -15,9 +19,17 @@
 
 namespace surface_path_planning {
 
+/**
+ * @brief Test node: sets up planning scene and graph_core plugins from parameters and
+ * plans a joint-space path with RRT*. Used by the simple_test executables.
+ */
 class SurfacePlannerNode : public rclcpp::Node
 {
 public:
+  /**
+   * @brief Constructor.
+   * @param options Node options.
+   */
   SurfacePlannerNode(const rclcpp::NodeOptions& options = rclcpp::NodeOptions());
 
   /**
@@ -25,12 +37,27 @@ public:
    * and executes the core RRT planning pipeline loop.
    */
   bool executePlanning(const std::string& robot_desc_string);
+  /**
+   * @brief Same as executePlanning(), with the goal given as a Cartesian pose solved with the IK solver.
+   */
   bool executePlanningCartesian(const std::string& robot_desc_string);
 
 private:
+  /**
+   * @brief Read the node parameters.
+   */
   void loadParameters();
+  /**
+   * @brief Download the planning scene from move_group.
+   */
   bool initPlanningScene();
+  /**
+   * @brief Create collision checker, sampler, metrics and IK solver.
+   */
   bool initPlugins(const std::string& robot_desc_string);
+  /**
+   * @brief Run RRT* until a solution is found.
+   */
   bool executeRrtLoop(graph::core::PathPtr& solution);
 
   // Core Configuration State
