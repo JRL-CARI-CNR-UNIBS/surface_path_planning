@@ -18,8 +18,18 @@
 #include <ik_solver_msgs/srv/change_tool.hpp>
 #include <ik_solver_msgs/srv/collision_checking.hpp>
 #include <ik_solver_msgs/srv/get_ik_array.hpp>
+// MoveIt >= Jazzy ships .hpp headers, Humble only .h
+#if __has_include(<moveit/planning_scene/planning_scene.hpp>)
 #include <moveit/planning_scene/planning_scene.hpp>
+#else
+#include <moveit/planning_scene/planning_scene.h>
+#endif
+// MoveIt >= Jazzy ships .hpp headers, Humble only .h
+#if __has_include(<moveit/robot_model_loader/robot_model_loader.hpp>)
 #include <moveit/robot_model_loader/robot_model_loader.hpp>
+#else
+#include <moveit/robot_model_loader/robot_model_loader.h>
+#endif
 #include <moveit_msgs/msg/display_trajectory.hpp>
 #include <moveit_msgs/srv/get_planning_scene.hpp>
 #include <parallel_multigoal_planner_msgs/action/parallel_multigoal_plan.hpp>

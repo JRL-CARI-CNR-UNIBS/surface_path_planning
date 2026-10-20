@@ -8,8 +8,18 @@
 #include <Eigen/Geometry>
 
 // MoveIt & Graph Core Includes
+// MoveIt >= Jazzy ships .hpp headers, Humble only .h
+#if __has_include(<moveit/robot_model_loader/robot_model_loader.hpp>)
 #include <moveit/robot_model_loader/robot_model_loader.hpp>
+#else
+#include <moveit/robot_model_loader/robot_model_loader.h>
+#endif
+// MoveIt >= Jazzy ships .hpp headers, Humble only .h
+#if __has_include(<moveit/planning_scene/planning_scene.hpp>)
 #include <moveit/planning_scene/planning_scene.hpp>
+#else
+#include <moveit/planning_scene/planning_scene.h>
+#endif
 #include <graph_core/solvers/rrt_star.h>
 #include <graph_display/graph_display.h>
 #include <ik_solver/internal/ik_solver_node.ros2.hpp>
