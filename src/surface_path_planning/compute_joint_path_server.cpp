@@ -18,6 +18,7 @@
 #include <moveit_collision_checker/collision_checkers/parallel_moveit_collision_checker.h>
 #include <moveit_msgs/msg/move_it_error_codes.hpp>
 #include <moveit_msgs/msg/planning_scene_components.hpp>
+#include <rclcpp/version.h>
 #include <tf2_eigen/tf2_eigen.hpp>
 
 namespace surface_path_planning
@@ -25,6 +26,14 @@ namespace surface_path_planning
 
 namespace
 {
+// Humble's create_client() only takes rmw_qos_profile_t; Jazzy (rclcpp 28+) takes rclcpp::QoS
+// and deprecates the rmw overload.
+#if RCLCPP_VERSION_MAJOR >= 28
+rclcpp::QoS serviceQoS() {return rclcpp::ServicesQoS();}
+#else
+const rmw_qos_profile_t & serviceQoS() {return rmw_qos_profile_services_default;}
+#endif
+
 /// Reorders (names, values) following order. Returns false if a joint is missing.
 bool reorder(const std::vector<std::string>& names, const std::vector<double>& values,
              const std::vector<std::string>& order, Eigen::VectorXd& out)
@@ -111,15 +120,15 @@ ComputeJointPathServer::ComputeJointPathServer(const rclcpp::Node::SharedPtr& no
   cb_group_joint_states_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive);
 
   ik_client_ = node_->create_client<ik_solver_msgs::srv::GetIkArray>(ns + "/get_task_redundant_ik_array",
-                                                                     rclcpp::ServicesQoS(), cb_group_services_);
+                                                                     serviceQoS(), cb_group_services_);
   change_tool_client_ =
-      node_->create_client<ik_solver_msgs::srv::ChangeTool>(ns + "/change_tool", rclcpp::ServicesQoS(), cb_group_services_);
-  scene_client_ = node_->create_client<moveit_msgs::srv::GetPlanningScene>(scene_service, rclcpp::ServicesQoS(),
+      node_->create_client<ik_solver_msgs::srv::ChangeTool>(ns + "/change_tool", serviceQoS(), cb_group_services_);
+  scene_client_ = node_->create_client<moveit_msgs::srv::GetPlanningScene>(scene_service, serviceQoS(),
                                                                            cb_group_services_);
 
   multigoal_client_ = rclcpp_action::create_client<MultigoalAction>(node_, multigoal_action, cb_group_services_);
   collision_check_client_ = node_->create_client<ik_solver_msgs::srv::CollisionChecking>(
-      collision_check_service, rclcpp::ServicesQoS(), cb_group_services_);
+      collision_check_service, serviceQoS(), cb_group_services_);
 
   rclcpp::SubscriptionOptions sub_options;
   sub_options.callback_group = cb_group_joint_states_;
