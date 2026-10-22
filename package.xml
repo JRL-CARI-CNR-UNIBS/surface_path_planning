@@ -2,7 +2,7 @@
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
   <name>surface_path_planning</name>
-  <version>0.1.0</version>
+  <version>0.2.0</version>
   <description>Joint-space path planning for robotic surface operations: converts a tool PoseArray into a joint path exploiting task redundancy. Developed by CARI-JRL.</description>
   <maintainer email="manuel.beschi@unibs.it">Manuel Beschi (CARI-JRL)</maintainer>
   <license>Apache-2.0</license>
@@ -35,7 +35,7 @@
   <depend>trajectory_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>moveit_msgs</depend>
-  <depend>ik_solver_msgs</depend>
+  <depend version_gte="0.1.0">ik_solver_msgs</depend>
   <depend>surface_path_planning_msgs</depend>
   <depend>parallel_multigoal_planner_msgs</depend>
   <exec_depend>parallel_multigoal_planner</exec_depend>

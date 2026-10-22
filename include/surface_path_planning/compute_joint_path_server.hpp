@@ -170,6 +170,8 @@ private:
   std::string group_name_;
   double service_timeout_;
   double ik_timeout_;
+  bool ik_parallel_;
+  int ik_threads_;
   double joint_state_timeout_;
   double checker_resolution_;
   int checker_threads_;

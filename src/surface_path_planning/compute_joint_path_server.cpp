@@ -4,6 +4,7 @@
 
 #include "surface_path_planning/compute_joint_path_server.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <limits>
@@ -72,6 +73,9 @@ ComputeJointPathServer::ComputeJointPathServer(const rclcpp::Node::SharedPtr& no
 
   service_timeout_ = node_->declare_parameter<double>("service_timeout", 10.0);
   ik_timeout_ = node_->declare_parameter<double>("ik_timeout", 120.0);
+  // Parallel IK: the UR solver is analytic and ignores seeds, so nothing is lost by not chaining them.
+  ik_parallel_ = node_->declare_parameter<bool>("ik_parallel", true);
+  ik_threads_ = std::max<int>(0, node_->declare_parameter<int>("ik_threads", 0));
   joint_state_timeout_ = node_->declare_parameter<double>("joint_state_timeout", 5.0);
   checker_resolution_ = node_->declare_parameter<double>("checker_resolution", 0.02);
   checker_threads_ = node_->declare_parameter<int>("checker_threads", 4);
@@ -325,6 +329,9 @@ bool ComputeJointPathServer::solveIk(const Action::Goal& goal, const Eigen::Vect
   // Targets 0..n-1: the poses. Targets n..2n-1: the poses moved by the offset in their own (tool) frame.
   auto req = std::make_shared<ik_solver_msgs::srv::GetIkArray::Request>();
   req->seed_joint_names = joint_names_;
+  req->parallelize = ik_parallel_ ? ik_solver_msgs::srv::GetIkArray::Request::PARALLELIZE_FORCE
+                                  : ik_solver_msgs::srv::GetIkArray::Request::PARALLELIZE_DISABLE;
+  req->num_threads = static_cast<uint32_t>(ik_threads_);
   req->targets.resize(2 * n);
   for (size_t i = 0; i < n; i++)
   {

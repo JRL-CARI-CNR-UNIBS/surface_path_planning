@@ -232,6 +232,8 @@ time parametrization → execution with MoveIt (`/execute_trajectory`). ROS para
 | `planning_scene_service` | `/get_planning_scene` | |
 | `service_timeout` | 10.0 | [s] change_tool and planning scene services |
 | `ik_timeout` | 120.0 | [s] IK service |
+| `ik_parallel` | true | solve the IK poses in parallel (`parallelize` of the request; overrides `parallel_ik_mode` of the ik_solver node) |
+| `ik_threads` | 0 | IK worker threads when `ik_parallel` is true; 0 uses all the threads of the ik_solver node (CPU cores of its build machine minus 2) |
 | `joint_state_timeout` | 5.0 | [s] |
 | `max_joint_step` | 0.35 | [rad] max joint motion (infinity norm) between consecutive surface points |
 | `max_deviation_joint_step` | 0.8 | [rad] max joint motion between a surface point and its leave/approach point |

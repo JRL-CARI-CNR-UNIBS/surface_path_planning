@@ -16,7 +16,7 @@ ur_ik_solver:
 
   min_stall_iterations: 100
   max_stall_iterations: 1000
-  parallel_ik_mode: 2
+  parallel_ik_mode: 2            # default for clients that do not set parallelize; compute_joint_path forces it (ik_parallel)
 
   # Keep only one configuration among the ones that differ by 2*pi on a revolute joint.
   filter_duplicates: true

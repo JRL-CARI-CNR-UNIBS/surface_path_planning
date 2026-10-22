@@ -8,6 +8,8 @@ compute_joint_path:
 
     service_timeout: 10.0                    # [s] timeout of change_tool and get_planning_scene
     ik_timeout: 120.0                        # [s] timeout of get_task_redundant_ik_array
+    ik_parallel: true                        # solve the IK poses in parallel (overrides parallel_ik_mode of the ik_solver node)
+    ik_threads: 0                            # IK worker threads when ik_parallel is true (0 = all the ik_solver node's threads)
     joint_state_timeout: 5.0                 # [s] wait for a complete joint state
 
     # Path construction
