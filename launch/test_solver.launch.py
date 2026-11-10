@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, TimerAction, DeclareLaunchArgument
+from launch.actions import TimerAction, DeclareLaunchArgument
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from ament_index_python.packages import get_package_share_directory
@@ -32,7 +32,7 @@ def generate_launch_description():
         description='Set to true to use the Sharework cell robot configuration'
     )
 
-    # --- Parameters (test_solver.yaml: ROS 2 parameters; ik_params.yaml: cnr_param, for ik_solver) ---
+    # --- Parameters (ROS 2 parameter files of the node) ---
     test_solver_param_file_path = PathJoinSubstitution([
         surface_path_planning_dir,
         'config',
@@ -45,10 +45,6 @@ def generate_launch_description():
         'ik_params.yaml'
     ])
 
-    ik_params = ExecuteProcess(
-        cmd=['cnr_param_server', '-p', ik_param_file_path],
-        output='screen'
-    )
 
     #constraint_visualizer = Node(
     #    package='surface_path_planning',
@@ -61,7 +57,7 @@ def generate_launch_description():
         package='surface_path_planning',
         executable='simple_test_1',
         output='screen',
-        parameters=[test_solver_param_file_path,
+        parameters=[test_solver_param_file_path, ik_param_file_path,
                     {'test_mode': LaunchConfiguration('test_mode'), 
                      'use_sharework': LaunchConfiguration('use_sharework')}]
     )
@@ -71,7 +67,6 @@ def generate_launch_description():
         test_solver_config_file_arg,
         test_solver_test_mode_arg,
         use_sharework_arg,
-        ik_params,
         #constraint_visualizer,
         TimerAction(period=3.0, actions=[planner]),
     ])

@@ -282,9 +282,11 @@ bool SurfacePlannerNode::initPlugins(const std::string& robot_desc_string)
   auto listener = std::make_shared<tf2_ros::TransformListener>(*tf_buffer);
   ik_solver_->setBuffer(tf_buffer);
 
-  std::string param_what;
-  cnr::param::set("/ur_ik_solver/robot_description", robot_desc_string, param_what);
-  if (!ik_solver_->config("/ur_ik_solver")) return false;
+  // ik_solver parameters: node parameters under "ur_ik_solver." (config/ik_params.yaml)
+  ik_solver::ParamMap ik_params = ik_solver::paramsFromNode(shared_from_this(), "ur_ik_solver");
+  ik_params["robot_description"] = robot_desc_string;
+  ik_solver_->setLogger(std::make_shared<ik_solver::RclcppLogger>(this->get_logger().get_child("ik_solver")));
+  if (!ik_solver_->config(ik_params)) return false;
 
 
 

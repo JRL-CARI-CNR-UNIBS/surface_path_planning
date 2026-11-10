@@ -55,43 +55,22 @@ cd ~/ros2_ws/src
 
 git clone -b modern_cmake https://github.com/JRL-CARI-CNR-UNIBS/cnr_class_loader.git
 
-git clone -b master https://github.com/JRL-CARI-CNR-UNIBS/cnr_logger.git
-
-git clone -b master https://github.com/CNR-STIIMA-IRAS/cnr_param.git
-
-git clone -b master https://github.com/JRL-CARI-CNR-UNIBS/graph_core.git
+git clone -b removing_cnr_logger_and_params https://github.com/JRL-CARI-CNR-UNIBS/graph_core.git
 
 git clone -b ros2 https://github.com/JRL-CARI-CNR-UNIBS/graph_display.git
 
-git clone -b master https://github.com/JRL-CARI-CNR-UNIBS/ik_solver.git
+git clone -b removing_cnr_logger_and_params https://github.com/JRL-CARI-CNR-UNIBS/ik_solver.git
 
 git clone -b master https://github.com/JRL-CARI-CNR-UNIBS/ik_solver_msgs.git
 
-git clone -b ros2 https://github.com/JRL-CARI-CNR-UNIBS/moveit_collision_checker.git
+git clone -b removing_cnr_logger_and_params https://github.com/JRL-CARI-CNR-UNIBS/moveit_collision_checker.git
 
-git clone -b ros2 https://github.com/JRL-CARI-CNR-UNIBS/ur_ik_solver.git
+git clone -b removing_cnr_logger_and_params https://github.com/JRL-CARI-CNR-UNIBS/ur_ik_solver.git
 
 # surface_path_planning_msgs (action definitions) and, for the full pipeline, surface_raster_planner
 # with surface_raster_planner_msgs must also be in the workspace.
 
 git clone -b jazzy https://github.com/JRL-CARI-CNR-UNIBS/sharework_cell.git
-```
-
----
-
-## Environment Configuration
-
-Add the following line to your `~/.bashrc`:
-
-```bash
-export CNR_PARAM_ROOT_DIRECTORY="/tmp/cnr_param"
-export IK_SOLVER_LOGGER_CONFIG_PATH="${HOME}/projects/ros2_ws/install/ik_solver_core/share/ik_solver_core/config/default_logger.yaml"
-```
-
-Reload your shell:
-
-```bash
-source ~/.bashrc
 ```
 
 ---
@@ -186,8 +165,9 @@ goal at a time is accepted.
      (and reported as skipped) until the robot can leave.
    - A pose that cannot be approached is skipped. The path ends with a leave motion.
 
-All the messages of this package use the ROS 2 logger. The graph_core collision checker requires a
-`cnr_logger` object in its API: it is created only to be passed to graph_core.
+All the messages of this package use the ROS 2 logger; graph_core and ik_solver write to the child
+loggers `<node>.graph_core` and `<node>.ik_solver`. The ik_solver parameters are node parameters
+under `ur_ik_solver.` (`config/ik_params.yaml`).
 
 Collision checking uses the move_group planning scene (`moveit_collision_checker`); the free
 motions are checked by `collision_checker_server` (`/collision_check`), which reads the same scene. The surface

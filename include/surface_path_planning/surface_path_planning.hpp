@@ -23,6 +23,7 @@
 #include <graph_core/solvers/rrt_star.h>
 #include <graph_display/graph_display.h>
 #include <ik_solver/internal/ik_solver_node.ros2.hpp>
+#include <ik_solver/ros_params.hpp>
 
 // Utility factory
 #include "surface_path_planning/utils.hpp"

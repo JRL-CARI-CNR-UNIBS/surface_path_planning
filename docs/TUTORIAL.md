@@ -19,7 +19,7 @@ colcon build --packages-up-to surface_path_planning surface_raster_planner
 source install/setup.bash
 ```
 
-`CNR_PARAM_ROOT_DIRECTORY` must be set (see the README). Remember to run
+Remember to run
 `source ~/projects/ros2_ws/install/setup.bash` in every new terminal.
 
 ---

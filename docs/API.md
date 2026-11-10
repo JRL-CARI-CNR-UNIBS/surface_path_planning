@@ -264,7 +264,7 @@ Factory class responsible for dynamically loading and configuring graph_core plu
 ##### `PlannerComponentsFactory`
 
 ```cpp
-PlannerComponentsFactory(cnr_class_loader::MultiLibraryClassLoader &loader, const rclcpp::Node::SharedPtr &node, const cnr_logger::TraceLoggerPtr &logger)
+PlannerComponentsFactory(cnr_class_loader::MultiLibraryClassLoader &loader, const rclcpp::Node::SharedPtr &node, const graph::core::LoggerPtr &logger)
 ```
 
 Construct a new Planner Components Factory.
@@ -273,7 +273,7 @@ Construct a new Planner Components Factory.
 
 - `loader`: Reference to the multi-library class loader (must outlive the plugins).
 - `node`: Shared pointer to the calling ROS 2 node for logging and parameter access.
-- `logger`: Pointer to the cnr_logger trace instance.
+- `logger`: graph_core logger.
 
 ##### `createCollisionChecker`
 
