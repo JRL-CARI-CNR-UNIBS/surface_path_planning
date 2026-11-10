@@ -41,28 +41,28 @@ bool permutationName(const std::vector<std::string>& order_names,
 
 PlannerComponentsFactory::PlannerComponentsFactory(cnr_class_loader::MultiLibraryClassLoader& loader,
                                                    const rclcpp::Node::SharedPtr& node,
-                                                   const cnr_logger::TraceLoggerPtr& logger)
+                                                   const graph::core::LoggerPtr& logger)
   : loader_(loader), node_(node), logger_(logger) {}
 
 graph::core::CollisionCheckerPtr PlannerComponentsFactory::createCollisionChecker(
-    const std::string& param_ns, const planning_scene::PlanningScenePtr& scene)
+    const graph::core::ParamMap& params, const planning_scene::PlanningScenePtr& scene)
 {
   std::string plugin_name;
-  graph::core::get_param(logger_, param_ns, "checker_plugin", plugin_name,
+  graph::core::get_param(logger_, params, "checker_plugin", plugin_name,
                         (std::string)"graph::ros1::ParallelMoveitCollisionCheckerPlugin");
 
   RCLCPP_INFO(node_->get_logger(), "Loading collision checker plugin: %s", plugin_name.c_str());
   auto plugin = loader_.createInstance<graph::collision_check::MoveitCollisionCheckerBasePlugin>(plugin_name);
-  plugin->init(param_ns, scene, logger_);
+  plugin->init(params, scene, logger_);
   return plugin->getCollisionChecker();
 }
 
 graph::core::SamplerPtr PlannerComponentsFactory::createSampler(
-    const std::string& param_ns, const Eigen::VectorXd& start_conf,
+    const graph::core::ParamMap& params, const Eigen::VectorXd& start_conf,
     const Eigen::VectorXd& goal_conf, const Eigen::VectorXd& lb, const Eigen::VectorXd& ub)
 {
   std::string plugin_name;
-  graph::core::get_param(logger_, param_ns, "sampler_plugin", plugin_name,
+  graph::core::get_param(logger_, params, "sampler_plugin", plugin_name,
                         (std::string)"graph::core::InformedSamplerPlugin");
 
   RCLCPP_INFO(node_->get_logger(), "Loading sampler plugin: %s", plugin_name.c_str());
@@ -71,19 +71,19 @@ graph::core::SamplerPtr PlannerComponentsFactory::createSampler(
   Eigen::VectorXd scale(start_conf.size());
   scale.setOnes(start_conf.size(), 1);
 
-  plugin->init(param_ns, start_conf, goal_conf, lb, ub, scale, logger_);
+  plugin->init(params, start_conf, goal_conf, lb, ub, scale, logger_);
   return plugin->getSampler();
 }
 
-graph::core::MetricsPtr PlannerComponentsFactory::createMetrics(const std::string& param_ns)
+graph::core::MetricsPtr PlannerComponentsFactory::createMetrics(const graph::core::ParamMap& params)
 {
   std::string plugin_name;
-  graph::core::get_param(logger_, param_ns, "metrics_plugin", plugin_name,
+  graph::core::get_param(logger_, params, "metrics_plugin", plugin_name,
                         (std::string)"graph::core::EuclideanMetricsPlugin");
 
   RCLCPP_INFO(node_->get_logger(), "Loading metrics plugin: %s", plugin_name.c_str());
   auto plugin = loader_.createInstance<graph::core::MetricsBasePlugin>(plugin_name);
-  plugin->init(param_ns, logger_);
+  plugin->init(params, logger_);
   return plugin->getMetrics();
 }
 

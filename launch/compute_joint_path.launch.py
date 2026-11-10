@@ -12,12 +12,10 @@ The robot (or its fake hardware) and move_group must already be running: the ser
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import (DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, OpaqueFunction,
-                            RegisterEventHandler, TimerAction)
-from launch.event_handlers import OnProcessExit
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, TimerAction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import FindExecutable, LaunchConfiguration
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 import os
 import yaml
@@ -54,7 +52,7 @@ def generate_launch_description():
                               description='MoveIt joint_limits.yaml of the robot used by the time parametrization '
                                           '(empty: URDF limits, accelerations = 5 * max velocity)'),
         DeclareLaunchArgument('mirrt_star_params', default_value=os.path.join(config_dir, 'mirrt_star.yaml'),
-                              description='cnr_param file of the mirrt* solver of parallel_multigoal_planner'),
+                              description='ROS 2 parameter file of the mirrt* solver of parallel_multigoal_planner'),
         DeclareLaunchArgument('ik_config', default_value=os.path.join(config_dir, 'compute_joint_path_ik.yaml'),
                               description='ik_solver configuration file'),
         DeclareLaunchArgument('start_ik_solver', default_value='true',
@@ -69,11 +67,6 @@ def generate_launch_description():
                                                          'config', 'collision_checker_params.yaml'),
                               description='Parameters of collision_checker_server (group_name, padding, scaling)'),
     ]
-
-    mirrt_star_params = ExecuteProcess(
-        cmd=[FindExecutable(name='cnr_param_server'), '--path-to-file', LaunchConfiguration('mirrt_star_params')],
-        output='screen',
-    )
 
     ik_solver = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -96,7 +89,8 @@ def generate_launch_description():
         executable='parallel_multigoal_planner_node',
         name='parallel_multigoal_planner',
         output='screen',
-        parameters=[{'ik_solver_ns': LaunchConfiguration('ik_solver_ns'),
+        parameters=[LaunchConfiguration('mirrt_star_params'),
+                    {'ik_solver_ns': LaunchConfiguration('ik_solver_ns'),
                      'collision_check_service': '/collision_check'}],
         condition=IfCondition(LaunchConfiguration('start_multigoal_planner')),
     )
@@ -109,14 +103,11 @@ def generate_launch_description():
         parameters=[LaunchConfiguration('params')],
     )
 
-    # cnr_param_server instances must not run concurrently (they share the parameter directory):
-    # the ik_solver parameters are loaded after the mirrt* ones, then the server starts.
     return LaunchDescription([
         *args,
         OpaqueFunction(function=_time_parametrization_node),
-        mirrt_star_params,
-        RegisterEventHandler(OnProcessExit(
-            target_action=mirrt_star_params,
-            on_exit=[ik_solver, collision_checker, multigoal_planner, TimerAction(period=3.0, actions=[server])],
-        )),
+        ik_solver,
+        collision_checker,
+        multigoal_planner,
+        TimerAction(period=3.0, actions=[server]),
     ])

@@ -1,28 +1,31 @@
-surface_path_planning:
+# ROS 2 parameters of the simple_test_1/2 nodes (node name test_solver). graph_core and plugin
+# parameters are under the prefix test_solver. (the ik_solver parameters are in ik_params.yaml,
+# loaded with cnr_param_server).
+/**:
+  ros__parameters:
     test_solver:
-        group_name: "ur_robot"
-        start_configuration: [1.570796327,-2.443460953,2.443460953,-1.570796327,1.570796327,0.0] # home position for the sharework ur10e
-        goal_configuration_1:  [0.785398,-1.5708,2.35619,-2.26893,1.5708,-0.785398]
-        goal_configuration_2: [0.785398, -1.45, 2.25, -2.26893, 1.5708, -0.785398]
-        
-        goal_pose:
-            position: [-0.174, 0.222, 0.72]
-            # position: [-0.174, 0.222, 0.691]
-            orientation: [0.001, -0.000, 1.000, 0.000]
-        
-        utopia_tolerance: 0.05 # tolerance wrt best solution
-        extend: true # if true steps towards next point are truncated at max_distance length
-        max_distance: 1.0 # to be used with extend: true
-        use_kdtree: true 
-        checker_resolution: 0.01
-        parallel_checker_n_threads: 4
-        goal_bias: 0.1 # defines the probability of sampling the goal configuration
+      group_name: "ur_robot"
+      start_configuration: [1.570796327,-2.443460953,2.443460953,-1.570796327,1.570796327,0.0] # home position for the sharework ur10e
+      goal_configuration_1:  [0.785398,-1.5708,2.35619,-2.26893,1.5708,-0.785398]
+      goal_configuration_2: [0.785398, -1.45, 2.25, -2.26893, 1.5708, -0.785398]
 
-        libraries: ["libgraph_core.so","libmoveit_collision_checker.so"]
+      goal_pose:
+        position: [-0.174, 0.222, 0.72]
+        # position: [-0.174, 0.222, 0.691]
+        orientation: [0.001, -0.000, 1.000, 0.000]
 
-        # planner: RRT, BiRRT, RRT*, ANYTIMERRT
-        planner_plugin: graph::core::RRTPlugin
-        sampler_plugin: graph::core::InformedSamplerPlugin
-        metrics_plugin: graph::core::EuclideanMetricsPlugin
-        checker_plugin: graph::collision_check::ParallelMoveitCollisionCheckerPlugin
+      utopia_tolerance: 0.05 # tolerance wrt best solution
+      extend: true # if true steps towards next point are truncated at max_distance length
+      max_distance: 1.0 # to be used with extend: true
+      use_kdtree: true
+      checker_resolution: 0.01
+      parallel_checker_n_threads: 4
+      goal_bias: 0.1 # defines the probability of sampling the goal configuration
 
+      libraries: ["libgraph_core.so","libmoveit_collision_checker.so"]
+
+      # planner: RRT, BiRRT, RRT*, ANYTIMERRT
+      planner_plugin: graph::core::RRTPlugin
+      sampler_plugin: graph::core::InformedSamplerPlugin
+      metrics_plugin: graph::core::EuclideanMetricsPlugin
+      checker_plugin: graph::collision_check::ParallelMoveitCollisionCheckerPlugin

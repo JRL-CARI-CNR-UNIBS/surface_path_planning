@@ -26,6 +26,7 @@
 
 // Utility factory
 #include "surface_path_planning/utils.hpp"
+#include "surface_path_planning/graph_core_ros.hpp"
 
 namespace surface_path_planning {
 
@@ -74,7 +75,8 @@ private:
   int test_mode_ = 0;
   bool use_sharework_ = false;
   std::string package_name_ = "surface_path_planning";
-  std::string param_ns2_;
+  /// Node parameters under "test_solver." (graph_core and plugin parameters)
+  graph::core::ParamMap params_;
   std::string group_name_;
   std::string end_effector_link_name_;
 
@@ -84,7 +86,7 @@ private:
   planning_scene::PlanningScenePtr planning_scene_;
 
   // Framework Core Components & Solvers
-  cnr_logger::TraceLoggerPtr logger_;
+  graph::core::LoggerPtr logger_;
   cnr_class_loader::MultiLibraryClassLoader loader_;
 
   graph::core::CollisionCheckerPtr checker_;

@@ -15,6 +15,9 @@
 #include <graph_core/plugins/metrics/metrics_base_plugin.h>
 #include <moveit_collision_checker/plugins/collision_checkers/moveit_collision_checker_base_plugin.h>
 
+#include <graph_core/logger.h>
+#include <graph_core/params.h>
+
 // Class Loader
 #include <cnr_class_loader/multi_library_class_loader.hpp>
 
@@ -43,24 +46,24 @@ public:
    * @brief Construct a new Planner Components Factory.
    * @param loader Reference to the multi-library class loader (must outlive the plugins).
    * @param node Shared pointer to the calling ROS 2 node for logging and parameter access.
-   * @param logger Pointer to the cnr_logger trace instance.
+   * @param logger Logger passed to the plugins.
    */
   PlannerComponentsFactory(cnr_class_loader::MultiLibraryClassLoader& loader,
                            const rclcpp::Node::SharedPtr& node,
-                           const cnr_logger::TraceLoggerPtr& logger);
+                           const graph::core::LoggerPtr& logger);
 
   /**
    * @brief Dynamically instantiates and initializes the collision checker plugin.
    */
   graph::core::CollisionCheckerPtr createCollisionChecker(
-      const std::string& param_ns,
+      const graph::core::ParamMap& params,
       const planning_scene::PlanningScenePtr& scene);
 
   /**
    * @brief Dynamically instantiates and initializes the sampler plugin.
    */
   graph::core::SamplerPtr createSampler(
-      const std::string& param_ns,
+      const graph::core::ParamMap& params,
       const Eigen::VectorXd& start_conf,
       const Eigen::VectorXd& goal_conf,
       const Eigen::VectorXd& lb,
@@ -69,12 +72,12 @@ public:
   /**
    * @brief Dynamically instantiates and initializes the metrics (distance function) plugin.
    */
-  graph::core::MetricsPtr createMetrics(const std::string& param_ns);
+  graph::core::MetricsPtr createMetrics(const graph::core::ParamMap& params);
 
 private:
   cnr_class_loader::MultiLibraryClassLoader& loader_;
   rclcpp::Node::SharedPtr node_;
-  cnr_logger::TraceLoggerPtr logger_;
+  graph::core::LoggerPtr logger_;
 };
 
 } // namespace utils

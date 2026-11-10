@@ -32,16 +32,12 @@ def generate_launch_description():
         description='Set to true to use the Sharework cell robot configuration'
     )
 
-    # --- Param servers ---
+    # --- Parameters (test_solver.yaml: ROS 2 parameters; ik_params.yaml: cnr_param, for ik_solver) ---
     test_solver_param_file_path = PathJoinSubstitution([
         surface_path_planning_dir,
         'config',
         'test_solver.yaml'
     ])
-    test_solver_params = ExecuteProcess(
-        cmd=['cnr_param_server', '-p', test_solver_param_file_path],
-        output='screen'
-    )
 
     ik_param_file_path = PathJoinSubstitution([
         surface_path_planning_dir,
@@ -65,7 +61,8 @@ def generate_launch_description():
         package='surface_path_planning',
         executable='simple_test_2',
         output='screen',
-        parameters=[{'test_mode': LaunchConfiguration('test_mode'), 
+        parameters=[test_solver_param_file_path,
+                    {'test_mode': LaunchConfiguration('test_mode'), 
                      'use_sharework': LaunchConfiguration('use_sharework')}]
     )
 
@@ -74,7 +71,6 @@ def generate_launch_description():
         test_solver_config_file_arg,
         test_solver_test_mode_arg,
         use_sharework_arg,
-        test_solver_params,
         ik_params,
         #constraint_visualizer,
         TimerAction(period=3.0, actions=[planner]),

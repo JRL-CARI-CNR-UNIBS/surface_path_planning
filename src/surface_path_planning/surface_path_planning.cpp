@@ -1,5 +1,4 @@
 #include "surface_path_planning/surface_path_planning.hpp"
-#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <moveit_msgs/srv/get_planning_scene.hpp>
 #include <fstream>
 #include <map>
@@ -34,10 +33,10 @@ bool SurfacePlannerNode::executePlanning(const std::string& robot_desc_string)
 
 
   // Read start/goal states from parameters and bootstrap tree endpoints.
-  graph::core::get_param(logger_, param_ns2_, "start_configuration", start_conf_);
-  graph::core::get_param(logger_, param_ns2_, "goal_configuration_1", goal_conf_1);
+  graph::core::get_param(logger_, params_, "start_configuration", start_conf_);
+  graph::core::get_param(logger_, params_, "goal_configuration_1", goal_conf_1);
   // Aggiunta per modifica
-  graph::core::get_param(logger_, param_ns2_, "goal_configuration_2", goal_conf_2);
+  graph::core::get_param(logger_, params_, "goal_configuration_2", goal_conf_2);
 
   graph::core::PathPtr solution1;
   goal_conf_ = goal_conf_1;
@@ -52,7 +51,7 @@ bool SurfacePlannerNode::executePlanning(const std::string& robot_desc_string)
   goal_conf_ = goal_conf_2;
 
   // Per far sì che start configuration sia corretta
-  graph::core::get_param(logger_, param_ns2_, "start_configuration", start_conf_);
+  graph::core::get_param(logger_, params_, "start_configuration", start_conf_);
 
   if (!executeRrtLoop(solution2)) {
     RCLCPP_ERROR(this->get_logger(), "Failed to execute RRT loop");
@@ -98,9 +97,9 @@ bool SurfacePlannerNode::executePlanningCartesian(const std::string& robot_desc_
   RCLCPP_INFO_STREAM(this->get_logger(), "initPlugins Ok");
 
   // Read start/goal states from parameters and bootstrap tree endpoints.
-  graph::core::get_param(logger_, param_ns2_, "start_configuration", start_conf_);
-  graph::core::get_param(logger_, param_ns2_, "goal_pose/position", goal_position_);
-  graph::core::get_param(logger_, param_ns2_, "goal_pose/orientation", goal_orientation_);
+  graph::core::get_param(logger_, params_, "start_configuration", start_conf_);
+  graph::core::get_param(logger_, params_, "goal_pose.position", goal_position_);
+  graph::core::get_param(logger_, params_, "goal_pose.orientation", goal_orientation_);
   // define pose (aka transformation, rototraslation)
   Eigen::Affine3d T_b_flange = Eigen::Affine3d::Identity();
 
@@ -191,15 +190,13 @@ void SurfacePlannerNode::loadParameters()
   this->declare_parameter("use_sharework", false);
   use_sharework_ = this->get_parameter("use_sharework").as_bool();
 
-  // Resolve package share path and bootstrap the logger from YAML config.
-  std::string package_path = ament_index_cpp::get_package_share_directory(package_name_);
-  std::string logger_file = package_path + "/config/logger_param.yaml";
-  logger_ = std::make_shared<cnr_logger::TraceLogger>("test_solver", logger_file);
+  // graph_core messages go to the child logger "test_solver.graph_core".
+  logger_ = std::make_shared<RclcppGraphLogger>(this->get_logger().get_child("graph_core"));
 
-  // Build parameter namespace used by graph_core helpers, then fetch the
-  // MoveIt planning group name that identifies the active joint model group.
-  param_ns2_ = "/" + package_name_ + "/test_solver";
-  graph::core::get_param(logger_, param_ns2_, "group_name", group_name_);
+  // graph_core and plugin parameters: node parameters under "test_solver." (config/test_solver.yaml).
+  // Then fetch the MoveIt planning group name that identifies the active joint model group.
+  params_ = graphParamsFromNode(shared_from_this(), "test_solver");
+  graph::core::get_param(logger_, params_, "group_name", group_name_);
   RCLCPP_INFO(this->get_logger(), "Planning group name: %s", group_name_.c_str());
 }
 
@@ -270,7 +267,7 @@ bool SurfacePlannerNode::initPlugins(const std::string& robot_desc_string)
   // Dynamically load all plugin libraries listed in parameters. This keeps the
   // planner extensible without hard-linking every implementation.
   std::vector<std::string> libraries;
-  graph::core::get_param(logger_, param_ns2_, "libraries", libraries);
+  graph::core::get_param(logger_, params_, "libraries", libraries);
   for (const auto& lib : libraries) loader_.loadLibrary(lib);
 
 
@@ -304,11 +301,11 @@ bool SurfacePlannerNode::executeRrtLoop(graph::core::PathPtr& solution)
   // - goal_bias: probability of sampling the exact goal configuration
   // - max_distance: expansion/connectivity threshold for tree extension
   double goal_bias;
-  graph::core::get_param(logger_, param_ns2_, "goal_bias", goal_bias);
+  graph::core::get_param(logger_, params_, "goal_bias", goal_bias);
   double max_distance;
-  graph::core::get_param(logger_, param_ns2_, "max_distance", max_distance);
+  graph::core::get_param(logger_, params_, "max_distance", max_distance);
   bool use_kdtree;
-  graph::core::get_param(logger_, param_ns2_, "use_kdtree", use_kdtree);
+  graph::core::get_param(logger_, params_, "use_kdtree", use_kdtree);
 
 
 
@@ -316,11 +313,11 @@ bool SurfacePlannerNode::executeRrtLoop(graph::core::PathPtr& solution)
   // Isolate implementation complexity using our Factory class
   utils::PlannerComponentsFactory factory(loader_, shared_from_this(), logger_);
   // collisioni
-  checker_ = factory.createCollisionChecker(param_ns2_, planning_scene_);
+  checker_ = factory.createCollisionChecker(params_, planning_scene_);
   // genera punti random
-  sampler_ = factory.createSampler(param_ns2_, start_conf_, goal_conf_, lb_, ub_);
+  sampler_ = factory.createSampler(params_, start_conf_, goal_conf_, lb_, ub_);
   // misura la distanza
-  metrics_ = factory.createMetrics(param_ns2_);
+  metrics_ = factory.createMetrics(params_);
 
   // Validate that both boundary states are collision-free before starting RRT.
   // Failing early avoids growing a tree from invalid endpoints.

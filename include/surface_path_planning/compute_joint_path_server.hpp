@@ -36,7 +36,7 @@
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <surface_path_planning_msgs/action/compute_joint_path.hpp>
 
-#include <cnr_logger/cnr_logger.h>
+#include "surface_path_planning/graph_core_ros.hpp"
 
 #include "surface_path_planning/joint_path_builder.hpp"
 
@@ -139,7 +139,7 @@ private:
   rclcpp_action::Server<Action>::SharedPtr server_;
   // Required by the graph_core collision checker API: it is only passed to
   // graph_core. All the messages of this package use the ROS 2 logger.
-  cnr_logger::TraceLoggerPtr graph_logger_;
+  graph::core::LoggerPtr graph_logger_;
   rclcpp::Publisher<moveit_msgs::msg::DisplayTrajectory>::SharedPtr display_pub_;
 
   // Separate callback groups: the goal runs on its own thread and waits for these responses.

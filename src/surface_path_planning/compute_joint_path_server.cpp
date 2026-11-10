@@ -15,7 +15,6 @@
 
 #include <Eigen/Geometry>
 
-#include <ament_index_cpp/get_package_share_directory.hpp>
 #include <moveit_collision_checker/collision_checkers/parallel_moveit_collision_checker.h>
 #include <moveit_msgs/msg/move_it_error_codes.hpp>
 #include <moveit_msgs/msg/planning_scene_components.hpp>
@@ -95,20 +94,12 @@ ComputeJointPathServer::ComputeJointPathServer(const rclcpp::Node::SharedPtr& no
   const std::string collision_check_service =
       node_->declare_parameter<std::string>("collision_check_service", "/collision_check");
 
-  std::string default_logger_config;
-  try
-  {
-    default_logger_config =
-        ament_index_cpp::get_package_share_directory("surface_path_planning") + "/config/logger_param.yaml";
-  }
-  catch (const std::exception&)
-  {
-    default_logger_config = "";
-  }
-  const std::string logger_config =
-      node_->declare_parameter<std::string>("graph_logger_config_file", default_logger_config);
-  // Configuration of the graph_core internal logger (default: warnings only).
-  graph_logger_ = std::make_shared<cnr_logger::TraceLogger>("compute_joint_path", logger_config);
+  // Messages of graph_core go to the child logger "<node>.graph_core". Its default level is WARN;
+  // it can be changed with e.g. --ros-args --log-level compute_joint_path.graph_core:=debug
+  const rclcpp::Logger graph_logger = node_->get_logger().get_child("graph_core");
+  if (rcutils_logging_get_logger_level(graph_logger.get_name()) == RCUTILS_LOG_SEVERITY_UNSET)
+    rcutils_logging_set_logger_level(graph_logger.get_name(), RCUTILS_LOG_SEVERITY_WARN);
+  graph_logger_ = std::make_shared<RclcppGraphLogger>(graph_logger);
 
   // Joint path for Rviz (MoveIt "Trajectory" display). Latched: the last path is always available.
   display_time_step_ = node_->declare_parameter<double>("display_time_step", 1.0);

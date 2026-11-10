@@ -215,7 +215,7 @@ time parametrization → execution with MoveIt (`/execute_trajectory`). ROS para
 | `params` | `config/compute_joint_path.yaml` | ROS parameters of the server |
 | `time_parametrization_params` | `config/compute_joint_trajectory.yaml` | ROS parameters of the time parametrization server |
 | `joint_limits` | `''` | MoveIt `joint_limits.yaml` of the robot, used by the time parametrization (empty: URDF limits, accelerations = 5 × max velocity) |
-| `mirrt_star_params` | `config/mirrt_star.yaml` | cnr_param parameters of the mirrt* solver of `parallel_multigoal_planner` |
+| `mirrt_star_params` | `config/mirrt_star.yaml` | ROS 2 parameters of the mirrt* solver of `parallel_multigoal_planner` (prefix `mirrt_star.`) |
 | `ik_config` | `config/compute_joint_path_ik.yaml` | ik_solver configuration (including `task_redundant`) |
 | `start_ik_solver` | `true` | start the ik_solver node |
 | `start_multigoal_planner` | `true` | start `collision_checker_server` and `parallel_multigoal_planner` |
@@ -244,7 +244,6 @@ time parametrization → execution with MoveIt (`/execute_trajectory`). ROS para
 | `max_backtracking_poses` | 20 | poses that can be dropped when the surface cannot be left |
 | `display_topic` | `~/display_path` | Rviz topic (`moveit_msgs/DisplayTrajectory`) |
 | `display_time_step` | 1.0 | [s] time between points in the displayed path (visualization only) |
-| `graph_logger_config_file` | `config/logger_param.yaml` | configuration of the logger required by graph_core (internal messages, warnings only) |
 | `checker_resolution` | 0.02 | [rad] discretization of the straight joint motions |
 | `checker_threads` | 4 | collision checking threads |
 
