@@ -55,6 +55,11 @@ set(ROS_DEPS
     moveit_core
     moveit_ros_planning_interface
     )
+# ament_target_dependencies() is removed in recent ROS 2 distros: link the exported targets
+set(ROS_DEPS_TARGETS)
+foreach(dep IN LISTS ROS_DEPS)
+  list(APPEND ROS_DEPS_TARGETS ${${dep}_TARGETS})
+endforeach()
 
 
 
@@ -78,17 +83,7 @@ target_link_libraries(surface_path_planning
     graph_display::graph_display
     moveit_collision_checker::moveit_collision_checker
 )
-ament_target_dependencies(surface_path_planning PUBLIC
-  rclcpp_action
-  ament_index_cpp
-  sensor_msgs
-  trajectory_msgs
-  ik_solver_msgs
-  surface_path_planning_msgs
-  parallel_multigoal_planner_msgs
-  moveit_msgs
-  ${ROS_DEPS}
-)
+target_link_libraries(surface_path_planning PUBLIC ${rclcpp_action_TARGETS} ${ament_index_cpp_TARGETS} ${sensor_msgs_TARGETS} ${trajectory_msgs_TARGETS} ${ik_solver_msgs_TARGETS} ${surface_path_planning_msgs_TARGETS} ${parallel_multigoal_planner_msgs_TARGETS} ${moveit_msgs_TARGETS} ${ROS_DEPS_TARGETS})
 # Create an alias for the library to link against easily
 add_library(surface_path_planning::surface_path_planning ALIAS surface_path_planning)
 
@@ -102,7 +97,7 @@ target_compile_features(simple_test_1 PUBLIC c_std_99 cxx_std_17)  # Require C99
 target_link_libraries(simple_test_1
     surface_path_planning::surface_path_planning
 )
-ament_target_dependencies(simple_test_1 control_msgs ${ROS_DEPS})
+target_link_libraries(simple_test_1 ${control_msgs_TARGETS} ${ROS_DEPS_TARGETS})
 
 
 # Simple test 2
@@ -115,7 +110,7 @@ target_compile_features(simple_test_2 PUBLIC c_std_99 cxx_std_17)  # Require C99
 target_link_libraries(simple_test_2
     surface_path_planning::surface_path_planning
 )
-ament_target_dependencies(simple_test_2 control_msgs ${ROS_DEPS})
+target_link_libraries(simple_test_2 ${control_msgs_TARGETS} ${ROS_DEPS_TARGETS})
 
 
 # compute_joint_path action server
@@ -124,7 +119,7 @@ target_compile_features(compute_joint_path_node PUBLIC c_std_99 cxx_std_17)
 target_link_libraries(compute_joint_path_node
     surface_path_planning::surface_path_planning
 )
-ament_target_dependencies(compute_joint_path_node ${ROS_DEPS})
+target_link_libraries(compute_joint_path_node ${ROS_DEPS_TARGETS})
 
 #ament_export_targets(export_${PROJECT_NAME} HAS_LIBRARY_TARGET)
 ament_export_dependencies(${DEPS_LIB} ${ROS_DEPS})
