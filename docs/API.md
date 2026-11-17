@@ -27,18 +27,21 @@ It covers the C++ classes and functions and the scripts. The ROS interface of th
 
 ### class `surface_path_planning::ComputeJointPathServer`
 
-Action server "compute_joint_path" (surface_path_planning_msgs/action/ComputeJointPath).
+Action servers "compute_joint_path" (surface_path_planning_msgs/action/ComputeJointPath) and "compute_joint_trajectory" (surface_path_planning_msgs/action/ComputeJointTrajectory).
 
-For each goal:
+For each compute_joint_path goal:
 
 1. reads the robot configuration from the joint states topic;
 2. downloads the current planning scene from move_group (used for collision checking);
 3. sets goal.planning_frame as IK tool frame (ik_solver change_tool service);
 4. solves with one call of get_task_redundant_ik_array the IK of every pose and of every pose moved by goal.deviation_distance (in the tool frame);
-5. builds the joint path with `JointPathBuilder`; free motions are planned by the parallel_multigoal_planner action;
-6. publishes the path for Rviz (moveit_msgs/DisplayTrajectory, fixed time step between points).
+5. builds the joint path with `JointPathBuilder`; free motions are planned by the parallel_multigoal_planner or by the prm_multigoal_planner action (parameter `multigoal_planner`);
+6. splits the path into surface / free-motion paths (`splitPath()`);
+7. publishes the path for Rviz (moveit_msgs/DisplayTrajectory, fixed time step between points).
 
-Only one goal at a time is accepted.
+For each compute_joint_trajectory goal, every path is retimed with its own request to the time parametrization action (time_parametrization package) and the results are appended in one trajectory, which is also published for Rviz.
+
+Each action accepts one goal at a time; the two actions can run at the same time.
 
 #### Public types
 
@@ -316,18 +319,20 @@ Reorders joint arrays (names, position, velocity, effort) in-place to match a ta
 ### `scripts/send_raster_to_joint_path.py`
 
 ```
-Example client of the compute_joint_path action.
+Example client of the compute_joint_path and compute_joint_trajectory actions.
 
 1. Calls the compute_trajectory service of surface_raster_planner (a mesh must already be loaded).
-2. Sends the resulting PoseArray and jump_indices to the compute_joint_path action.
-3. Sends the joint path to the compute_joint_trajectory action (time_parametrization package, TOTG)
-   to compute the timed trajectory.
+2. Sends the resulting PoseArray and jump_indices to the compute_joint_path action, which returns
+   the joint path split into surface / free-motion paths.
+3. Sends the paths to the compute_joint_trajectory action, which retimes each of them (TOTG) and
+   appends them in one trajectory.
 4. Executes the trajectory with MoveIt (execute_trajectory action of move_group).
-The compute_joint_path server publishes the path for Rviz on /compute_joint_path/display_path.
+The server publishes the path and then the trajectory for Rviz on /compute_joint_path/display_path.
 
 ROS parameters:
-  scaling_factor (double, default 0.1): velocity and acceleration scaling factor, in (0, 1]
-  group_name (string, default ur_robot): MoveIt planning group
+  scaling_factor (double, default 0.1): velocity and acceleration scaling factor of the surface
+    paths, in (0, 1]
+  free_motion_scaling_factor (double, default: scaling_factor): the same for the free-motion paths
   execute (bool, default true): false to stop after the time parametrization
 
 Example:

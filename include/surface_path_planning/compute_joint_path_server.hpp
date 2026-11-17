@@ -35,6 +35,8 @@
 #include <parallel_multigoal_planner_msgs/action/parallel_multigoal_plan.hpp>
 #include <sensor_msgs/msg/joint_state.hpp>
 #include <surface_path_planning_msgs/action/compute_joint_path.hpp>
+#include <surface_path_planning_msgs/action/compute_joint_trajectory.hpp>
+#include <time_parametrization_msgs/action/apply_time_parametrization.hpp>
 
 #include "surface_path_planning/graph_core_ros.hpp"
 
@@ -44,25 +46,33 @@ namespace surface_path_planning
 {
 
 /**
- * @brief Action server "compute_joint_path" (surface_path_planning_msgs/action/ComputeJointPath).
+ * @brief Action servers "compute_joint_path" (surface_path_planning_msgs/action/ComputeJointPath)
+ * and "compute_joint_trajectory" (surface_path_planning_msgs/action/ComputeJointTrajectory).
  *
- * For each goal:
+ * For each compute_joint_path goal:
  *  1. reads the robot configuration from the joint states topic;
  *  2. downloads the current planning scene from move_group (used for collision checking);
  *  3. sets goal.planning_frame as IK tool frame (ik_solver change_tool service);
  *  4. solves with one call of get_task_redundant_ik_array the IK of every pose and of every pose
  *     moved by goal.deviation_distance (in the tool frame);
  *  5. builds the joint path with JointPathBuilder; free motions are planned by the
- *     parallel_multigoal_planner action;
- *  6. publishes the path for Rviz (moveit_msgs/DisplayTrajectory, fixed time step between points).
+ *     parallel_multigoal_planner or by the prm_multigoal_planner action (parameter multigoal_planner);
+ *  6. splits the path into surface / free-motion paths (see splitPath());
+ *  7. publishes the path for Rviz (moveit_msgs/DisplayTrajectory, fixed time step between points).
  *
- * Only one goal at a time is accepted.
+ * For each compute_joint_trajectory goal, every path is retimed with its own request to the time
+ * parametrization action (time_parametrization package) and the results are appended in one
+ * trajectory, which is also published for Rviz.
+ *
+ * Each action accepts one goal at a time; the two actions can run at the same time.
  */
 class ComputeJointPathServer
 {
 public:
   using Action = surface_path_planning_msgs::action::ComputeJointPath;
   using GoalHandle = rclcpp_action::ServerGoalHandle<Action>;
+  using TrajectoryAction = surface_path_planning_msgs::action::ComputeJointTrajectory;
+  using TrajectoryGoalHandle = rclcpp_action::ServerGoalHandle<TrajectoryAction>;
 
   /**
    * @brief Declare the parameters, create clients, subscriptions and the action server.
@@ -91,6 +101,14 @@ private:
    */
   void execute(const std::shared_ptr<GoalHandle> gh);
 
+  /// compute_joint_trajectory: validate the goal and accept it only if no other one is running.
+  rclcpp_action::GoalResponse handleTrajectoryGoal(const rclcpp_action::GoalUUID& uuid,
+                                                   std::shared_ptr<const TrajectoryAction::Goal> goal);
+  /// compute_joint_trajectory: run executeTrajectory() in a separate thread.
+  void handleTrajectoryAccepted(const std::shared_ptr<TrajectoryGoalHandle> gh);
+  /// compute_joint_trajectory: retime the paths of one goal and append them.
+  void executeTrajectory(const std::shared_ptr<TrajectoryGoalHandle> gh);
+
   /**
    * @brief Read the current robot configuration from the joint states topic.
    */
@@ -115,20 +133,48 @@ private:
   bool solveIk(const Action::Goal& goal, const Eigen::VectorXd& seed, std::vector<Candidates>& process,
                std::vector<Candidates>& deviation, std::string& error);
 
-  /// Free motion from q_from to one of goals, planned by the parallel_multigoal_planner action.
+  using MultigoalAction = parallel_multigoal_planner_msgs::action::ParallelMultigoalPlan;
+  using MultigoalClient = rclcpp_action::Client<MultigoalAction>;
+  using TimeParametrizationAction = time_parametrization_msgs::action::ApplyTimeParametrization;
+
+  /// Client of the planner selected by the multigoal_planner parameter (read at every goal).
+  /// Returns nullptr and sets error if the parameter value is unknown.
+  MultigoalClient::SharedPtr selectMultigoalClient(std::string& planner_name, std::string& error) const;
+
+  /// Free motion from q_from to one of goals, planned by the multigoal action of client.
   /// path excludes q_from and ends exactly at goals[goal_index]. Cancels the request if gh is canceling.
-  bool planMultigoal(const Eigen::VectorXd& q_from, const std::vector<Eigen::VectorXd>& goals,
+  bool planMultigoal(const MultigoalClient::SharedPtr& client, const std::string& planner_name,
+                     const Eigen::VectorXd& q_from, const std::vector<Eigen::VectorXd>& goals,
                      std::vector<Eigen::VectorXd>& path, size_t& goal_index, const std::shared_ptr<GoalHandle>& gh);
 
-  /**
-   * @brief Publish the path as a moveit_msgs/DisplayTrajectory for RViz.
-   */
   /// Asks the planner collision checker (/collision_check, detailed) why q_from and goals are rejected,
   /// and logs the colliding links. Used only to diagnose a failed planner request.
   void logCollisionDetails(const Eigen::VectorXd& q_from, const std::vector<Eigen::VectorXd>& goals);
 
+  /**
+   * @brief Split the path (preceded by q_start) at the first and at the last pose of every continuous
+   * run of surface poses. SURFACE and FREE_MOTION paths alternate and share their end points.
+   * Repeated consecutive configurations are removed; paths with less than two points are dropped.
+   */
+  void splitPath(const Eigen::VectorXd& q_start, const JointPathBuilderResult& path,
+                 std::vector<trajectory_msgs::msg::JointTrajectory>& paths, std::vector<uint8_t>& path_types) const;
+
+  /**
+   * @brief Retime each path with its own time parametrization request (all sent at once) and append them.
+   * @param goal compute_joint_trajectory goal (already validated).
+   * @param[out] timed Timed trajectory, ordered as joint_names_.
+   * @param gh Goal handle, for feedback and cancellation.
+   * @param[out] error Error message.
+   */
+  bool timeParametrize(const TrajectoryAction::Goal& goal, trajectory_msgs::msg::JointTrajectory& timed,
+                       const std::shared_ptr<TrajectoryGoalHandle>& gh, std::string& error);
+
+  /**
+   * @brief Publish a trajectory starting from q_start as a moveit_msgs/DisplayTrajectory for RViz.
+   * @param timed If false, q_start is prepended and a fake time step (display_time_step) is used.
+   */
   void publishDisplayTrajectory(const trajectory_msgs::msg::JointTrajectory& trajectory,
-                                const Eigen::VectorXd& q_start);
+                                const Eigen::VectorXd& q_start, bool timed);
 
   /**
    * @brief Store the last joint state.
@@ -137,6 +183,7 @@ private:
 
   rclcpp::Node::SharedPtr node_;
   rclcpp_action::Server<Action>::SharedPtr server_;
+  rclcpp_action::Server<TrajectoryAction>::SharedPtr trajectory_server_;
   // Required by the graph_core collision checker API: it is only passed to
   // graph_core. All the messages of this package use the ROS 2 logger.
   graph::core::LoggerPtr graph_logger_;
@@ -149,14 +196,16 @@ private:
   rclcpp::Client<ik_solver_msgs::srv::ChangeTool>::SharedPtr change_tool_client_;
   rclcpp::Client<moveit_msgs::srv::GetPlanningScene>::SharedPtr scene_client_;
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_state_sub_;
-  using MultigoalAction = parallel_multigoal_planner_msgs::action::ParallelMultigoalPlan;
-  rclcpp_action::Client<MultigoalAction>::SharedPtr multigoal_client_;
+  MultigoalClient::SharedPtr parallel_multigoal_client_;
+  MultigoalClient::SharedPtr prm_multigoal_client_;
+  rclcpp_action::Client<TimeParametrizationAction>::SharedPtr time_parametrization_client_;
   rclcpp::Client<ik_solver_msgs::srv::CollisionChecking>::SharedPtr collision_check_client_;
 
   std::mutex joint_state_mtx_;
   sensor_msgs::msg::JointState::SharedPtr last_joint_state_;
 
   std::atomic<bool> busy_{ false };
+  std::atomic<bool> trajectory_busy_{ false };
 
   // Robot model and collision checking
   std::shared_ptr<robot_model_loader::RobotModelLoader> robot_model_loader_;
@@ -177,6 +226,8 @@ private:
   int checker_threads_;
   double display_time_step_;
   double multigoal_planning_time_;
+  double time_parametrization_timeout_;
+  // multigoal_planner is read at every goal.
   JointPathBuilderOptions builder_options_;
 };
 

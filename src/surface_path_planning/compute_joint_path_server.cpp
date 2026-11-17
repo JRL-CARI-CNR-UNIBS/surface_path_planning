@@ -86,10 +86,19 @@ ComputeJointPathServer::ComputeJointPathServer(const rclcpp::Node::SharedPtr& no
   builder_options_.max_multigoal_goals =
       static_cast<unsigned int>(node_->declare_parameter<int>("max_multigoal_goals", 20));
 
-  // Free motions are planned by the parallel_multigoal_planner action.
-  const std::string multigoal_action =
-      node_->declare_parameter<std::string>("multigoal_action", "/parallel_multigoal_plan");
+  // Free motions are planned by parallel_multigoal_planner or prm_multigoal_planner (same action type).
+  // multigoal_planner is read at every goal, so it can be changed with `ros2 param set`.
+  node_->declare_parameter<std::string>("multigoal_planner", "parallel_multigoal_planner");
+  const std::string parallel_multigoal_action =
+      node_->declare_parameter<std::string>("parallel_multigoal_action", "/parallel_multigoal_plan");
+  const std::string prm_multigoal_action =
+      node_->declare_parameter<std::string>("prm_multigoal_action", "/prm_multigoal_plan");
   multigoal_planning_time_ = node_->declare_parameter<double>("multigoal_planning_time", 5.0);
+
+  // Time parametrization server (TOTG) used by the compute_joint_trajectory action.
+  const std::string time_parametrization_action =
+      node_->declare_parameter<std::string>("time_parametrization_action", "/apply_time_parametrization");
+  time_parametrization_timeout_ = node_->declare_parameter<double>("time_parametrization_timeout", 30.0);
   // Collision checker used by parallel_multigoal_planner: queried only to explain a failed request.
   const std::string collision_check_service =
       node_->declare_parameter<std::string>("collision_check_service", "/collision_check");
@@ -121,7 +130,12 @@ ComputeJointPathServer::ComputeJointPathServer(const rclcpp::Node::SharedPtr& no
   scene_client_ = node_->create_client<moveit_msgs::srv::GetPlanningScene>(scene_service, serviceQoS(),
                                                                            cb_group_services_);
 
-  multigoal_client_ = rclcpp_action::create_client<MultigoalAction>(node_, multigoal_action, cb_group_services_);
+  parallel_multigoal_client_ =
+      rclcpp_action::create_client<MultigoalAction>(node_, parallel_multigoal_action, cb_group_services_);
+  prm_multigoal_client_ =
+      rclcpp_action::create_client<MultigoalAction>(node_, prm_multigoal_action, cb_group_services_);
+  time_parametrization_client_ = rclcpp_action::create_client<TimeParametrizationAction>(
+      node_, time_parametrization_action, cb_group_services_);
   collision_check_client_ = node_->create_client<ik_solver_msgs::srv::CollisionChecking>(
       collision_check_service, serviceQoS(), cb_group_services_);
 
@@ -170,7 +184,13 @@ bool ComputeJointPathServer::init()
                                                  std::bind(&ComputeJointPathServer::handleCancel, this, _1),
                                                  std::bind(&ComputeJointPathServer::handleAccepted, this, _1));
 
-  RCLCPP_INFO(node_->get_logger(), "compute_joint_path action server ready (group '%s', %zu joints)",
+  trajectory_server_ = rclcpp_action::create_server<TrajectoryAction>(
+      node_, "compute_joint_trajectory", std::bind(&ComputeJointPathServer::handleTrajectoryGoal, this, _1, _2),
+      [](const std::shared_ptr<TrajectoryGoalHandle>) { return rclcpp_action::CancelResponse::ACCEPT; },
+      std::bind(&ComputeJointPathServer::handleTrajectoryAccepted, this, _1));
+
+  RCLCPP_INFO(node_->get_logger(),
+              "compute_joint_path and compute_joint_trajectory action servers ready (group '%s', %zu joints)",
               group_name_.c_str(), dof);
   return true;
 }
@@ -368,15 +388,30 @@ bool ComputeJointPathServer::solveIk(const Action::Goal& goal, const Eigen::Vect
   return true;
 }
 
-bool ComputeJointPathServer::planMultigoal(const Eigen::VectorXd& q_from, const std::vector<Eigen::VectorXd>& goals,
+ComputeJointPathServer::MultigoalClient::SharedPtr
+ComputeJointPathServer::selectMultigoalClient(std::string& planner_name, std::string& error) const
+{
+  planner_name = node_->get_parameter("multigoal_planner").as_string();
+  if (planner_name == "parallel_multigoal_planner")
+    return parallel_multigoal_client_;
+  if (planner_name == "prm_multigoal_planner")
+    return prm_multigoal_client_;
+  error = "unknown multigoal_planner '" + planner_name +
+          "' (allowed values: parallel_multigoal_planner, prm_multigoal_planner)";
+  return nullptr;
+}
+
+bool ComputeJointPathServer::planMultigoal(const MultigoalClient::SharedPtr& client, const std::string& planner_name,
+                                           const Eigen::VectorXd& q_from, const std::vector<Eigen::VectorXd>& goals,
                                            std::vector<Eigen::VectorXd>& path, size_t& goal_index,
                                            const std::shared_ptr<GoalHandle>& gh)
 {
   path.clear();
   const auto logger = node_->get_logger();
-  if (!multigoal_client_->wait_for_action_server(std::chrono::duration<double>(service_timeout_)))
+  const char* name = planner_name.c_str();
+  if (!client->wait_for_action_server(std::chrono::duration<double>(service_timeout_)))
   {
-    RCLCPP_ERROR(logger, "parallel_multigoal_planner action server not available");
+    RCLCPP_ERROR(logger, "%s action server not available", name);
     return false;
   }
 
@@ -403,14 +438,14 @@ bool ComputeJointPathServer::planMultigoal(const Eigen::VectorXd& q_from, const 
     req.goal_constraints.push_back(c);
   }
 
-  auto goal_handle_future = multigoal_client_->async_send_goal(goal);
+  auto goal_handle_future = client->async_send_goal(goal);
   if (!waitFor(goal_handle_future, service_timeout_) || !goal_handle_future.get())
   {
-    RCLCPP_ERROR(logger, "parallel_multigoal_planner rejected the goal (or did not answer)");
+    RCLCPP_ERROR(logger, "%s rejected the goal (or did not answer)", name);
     return false;
   }
   auto planner_gh = goal_handle_future.get();
-  auto result_future = multigoal_client_->async_get_result(planner_gh);
+  auto result_future = client->async_get_result(planner_gh);
 
   // Wait for the result, forwarding cancellation of our own goal.
   const auto deadline = std::chrono::steady_clock::now() +
@@ -420,8 +455,8 @@ bool ComputeJointPathServer::planMultigoal(const Eigen::VectorXd& q_from, const 
     if (gh->is_canceling() || std::chrono::steady_clock::now() > deadline || !rclcpp::ok())
     {
       if (!gh->is_canceling())
-        RCLCPP_ERROR(logger, "parallel_multigoal_planner timeout");
-      multigoal_client_->async_cancel_goal(planner_gh);
+        RCLCPP_ERROR(logger, "%s timeout", name);
+      client->async_cancel_goal(planner_gh);
       return false;
     }
   }
@@ -430,7 +465,7 @@ bool ComputeJointPathServer::planMultigoal(const Eigen::VectorXd& q_from, const 
   if (wrapped.code != rclcpp_action::ResultCode::SUCCEEDED || !wrapped.result ||
       wrapped.result->motion_plan_response.error_code.val != moveit_msgs::msg::MoveItErrorCodes::SUCCESS)
   {
-    RCLCPP_WARN(logger, "parallel_multigoal_planner failed (MoveIt error code %d)",
+    RCLCPP_WARN(logger, "%s failed (MoveIt error code %d)", name,
                 wrapped.result ? wrapped.result->motion_plan_response.error_code.val : 0);
     logCollisionDetails(q_from, goals);
     return false;
@@ -442,7 +477,7 @@ bool ComputeJointPathServer::planMultigoal(const Eigen::VectorXd& q_from, const 
     Eigen::VectorXd q;
     if (!reorder(traj.joint_names, point.positions, joint_names_, q))
     {
-      RCLCPP_ERROR(logger, "parallel_multigoal_planner returned a trajectory with different joints");
+      RCLCPP_ERROR(logger, "%s returned a trajectory with different joints", name);
       path.clear();
       return false;
     }
@@ -467,7 +502,7 @@ bool ComputeJointPathServer::planMultigoal(const Eigen::VectorXd& q_from, const 
   }
   if (best > 1e-3)
   {
-    RCLCPP_ERROR(logger, "parallel_multigoal_planner path does not end at a requested goal (distance %f)", best);
+    RCLCPP_ERROR(logger, "%s path does not end at a requested goal (distance %f)", name, best);
     path.clear();
     return false;
   }
@@ -479,9 +514,11 @@ void ComputeJointPathServer::logCollisionDetails(const Eigen::VectorXd& q_from, 
 {
   using ik_solver_msgs::msg::CollisionResult;
   const auto logger = node_->get_logger();
-  if (!collision_check_client_->wait_for_service(std::chrono::duration<double>(service_timeout_)))
+  // Do not wait: the checker may not be running (prm_multigoal_planner does not need it).
+  if (!collision_check_client_->service_is_ready())
   {
-    RCLCPP_WARN(logger, "collision check service not available: cannot explain the failure");
+    RCLCPP_WARN(logger, "collision check service '%s' not available: cannot explain the failure",
+                collision_check_client_->get_service_name());
     return;
   }
 
@@ -547,11 +584,315 @@ void ComputeJointPathServer::logCollisionDetails(const Eigen::VectorXd& q_from, 
     RCLCPP_WARN(logger, "  %zu goal(s): %s", r.second, r.first.c_str());
 }
 
-void ComputeJointPathServer::publishDisplayTrajectory(const trajectory_msgs::msg::JointTrajectory& trajectory,
-                                                      const Eigen::VectorXd& q_start)
+void ComputeJointPathServer::splitPath(const Eigen::VectorXd& q_start, const JointPathBuilderResult& path,
+                                       std::vector<trajectory_msgs::msg::JointTrajectory>& paths,
+                                       std::vector<uint8_t>& path_types) const
 {
-  // The timing is fake (display_time_step between consecutive points): it is only used by Rviz to
-  // animate the path. The action result keeps time_from_start = 0.
+  paths.clear();
+  path_types.clear();
+
+  // Whole path, starting from the current configuration. surface[k]: point k is a surface pose.
+  std::vector<Eigen::VectorXd> points{ q_start };
+  std::vector<bool> surface{ false };
+  points.insert(points.end(), path.waypoints.begin(), path.waypoints.end());
+  for (int idx : path.pose_indices)
+    surface.push_back(idx >= 0);
+  const size_t n = points.size();
+
+  // Break points: path ends, first and last pose of every run of surface poses.
+  std::vector<size_t> breaks{ 0 };
+  for (size_t k = 1; k < n; k++)
+  {
+    const bool run_start = surface.at(k) && !surface.at(k - 1);
+    const bool run_end = surface.at(k) && (k + 1 == n || !surface.at(k + 1));
+    if (run_start || run_end || k + 1 == n)
+      breaks.push_back(k);
+  }
+
+  for (size_t b = 0; b + 1 < breaks.size(); b++)
+  {
+    trajectory_msgs::msg::JointTrajectory piece;
+    piece.joint_names = joint_names_;
+    bool on_surface = true;
+    const Eigen::VectorXd* last = nullptr;
+    for (size_t k = breaks.at(b); k <= breaks.at(b + 1); k++)
+    {
+      on_surface = on_surface && surface.at(k);
+      // Repeated configurations make TOTG fail: drop them.
+      if (last && (points.at(k) - *last).norm() <= 1e-9)
+        continue;
+      trajectory_msgs::msg::JointTrajectoryPoint p;
+      p.positions.assign(points.at(k).data(), points.at(k).data() + points.at(k).size());
+      piece.points.push_back(p);
+      last = &points.at(k);
+    }
+    if (piece.points.size() < 2)
+      continue;
+    paths.push_back(piece);
+    path_types.push_back(on_surface ? Action::Result::SURFACE : Action::Result::FREE_MOTION);
+  }
+}
+
+rclcpp_action::GoalResponse
+ComputeJointPathServer::handleTrajectoryGoal(const rclcpp_action::GoalUUID& /*uuid*/,
+                                             std::shared_ptr<const TrajectoryAction::Goal> goal)
+{
+  if (goal->paths.empty())
+  {
+    RCLCPP_ERROR(node_->get_logger(), "compute_joint_trajectory goal rejected: no paths");
+    return rclcpp_action::GoalResponse::REJECT;
+  }
+  if (goal->path_types.size() != goal->paths.size())
+  {
+    RCLCPP_ERROR(node_->get_logger(), "compute_joint_trajectory goal rejected: %zu path_types for %zu paths",
+                 goal->path_types.size(), goal->paths.size());
+    return rclcpp_action::GoalResponse::REJECT;
+  }
+  bool expected = false;
+  if (!trajectory_busy_.compare_exchange_strong(expected, true))
+  {
+    RCLCPP_ERROR(node_->get_logger(), "compute_joint_trajectory goal rejected: another goal is running");
+    return rclcpp_action::GoalResponse::REJECT;
+  }
+  return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
+}
+
+void ComputeJointPathServer::handleTrajectoryAccepted(const std::shared_ptr<TrajectoryGoalHandle> gh)
+{
+  std::thread{ [this, gh]() {
+    executeTrajectory(gh);
+    trajectory_busy_ = false;
+  } }.detach();
+}
+
+void ComputeJointPathServer::executeTrajectory(const std::shared_ptr<TrajectoryGoalHandle> gh)
+{
+  const auto goal = gh->get_goal();
+  auto result = std::make_shared<TrajectoryAction::Result>();
+
+  std::string error;
+  trajectory_msgs::msg::JointTrajectory timed;
+  if (!timeParametrize(*goal, timed, gh, error))
+  {
+    result->success = false;
+    result->message = error;
+    if (gh->is_canceling())
+    {
+      result->message = "canceled";
+      gh->canceled(result);
+      return;
+    }
+    RCLCPP_ERROR(node_->get_logger(), "compute_joint_trajectory failed: %s", error.c_str());
+    gh->abort(result);
+    return;
+  }
+
+  timed.header.frame_id = goal->paths.front().header.frame_id;
+  result->trajectory.joint_trajectory = timed;
+  result->success = true;
+  result->message = "trajectory computed, " + std::to_string(timed.points.size()) + " points, " +
+                    std::to_string(rclcpp::Duration(timed.points.back().time_from_start).seconds()) + " s";
+
+  const auto& p0 = timed.points.front().positions;
+  publishDisplayTrajectory(timed, Eigen::Map<const Eigen::VectorXd>(p0.data(), static_cast<Eigen::Index>(p0.size())),
+                           true);
+  gh->succeed(result);
+}
+
+bool ComputeJointPathServer::timeParametrize(const TrajectoryAction::Goal& goal,
+                                             trajectory_msgs::msg::JointTrajectory& timed,
+                                             const std::shared_ptr<TrajectoryGoalHandle>& gh, std::string& error)
+{
+  timed = trajectory_msgs::msg::JointTrajectory();
+  timed.joint_names = joint_names_;
+
+  auto feedback = std::make_shared<TrajectoryAction::Feedback>();
+  feedback->total_paths = static_cast<uint32_t>(goal.paths.size());
+  auto publishFeedback = [&](size_t index, const std::string& status) {
+    feedback->current_index = static_cast<uint32_t>(index);
+    feedback->status = status;
+    gh->publish_feedback(feedback);
+  };
+
+  // Paths in joint_names_ order, without repeated points, checking that they are consecutive.
+  struct Piece
+  {
+    std::vector<Eigen::VectorXd> points;
+    bool surface;
+    size_t index;  // index in goal.paths
+  };
+  std::vector<Piece> pieces;
+  const Eigen::VectorXd* previous_end = nullptr;
+  for (size_t i = 0; i < goal.paths.size(); i++)
+  {
+    const uint8_t type = goal.path_types.at(i);
+    if (type != TrajectoryAction::Goal::SURFACE && type != TrajectoryAction::Goal::FREE_MOTION)
+    {
+      error = "path " + std::to_string(i) + ": unknown path type " + std::to_string(type);
+      return false;
+    }
+    Piece piece{ {}, type == TrajectoryAction::Goal::SURFACE, i };
+    for (const auto& point : goal.paths.at(i).points)
+    {
+      Eigen::VectorXd q;
+      if (!reorder(goal.paths.at(i).joint_names, point.positions, joint_names_, q))
+      {
+        error = "path " + std::to_string(i) + ": joint names do not match the planning group '" + group_name_ + "'";
+        return false;
+      }
+      if (piece.points.empty() || (q - piece.points.back()).norm() > 1e-9)
+        piece.points.push_back(q);
+    }
+    if (piece.points.empty())
+      continue;
+    if (previous_end && (piece.points.front() - *previous_end).cwiseAbs().maxCoeff() > 1e-4)
+    {
+      error = "path " + std::to_string(i) + " does not start at the end of the previous path";
+      return false;
+    }
+    pieces.push_back(piece);
+    previous_end = &pieces.back().points.back();
+  }
+  pieces.erase(std::remove_if(pieces.begin(), pieces.end(), [](const Piece& p) { return p.points.size() < 2; }),
+               pieces.end());
+  if (pieces.empty())
+  {
+    error = "the paths contain no motion";
+    return false;
+  }
+
+  publishFeedback(0, "waiting for the time parametrization server");
+  if (!time_parametrization_client_->wait_for_action_server(std::chrono::duration<double>(service_timeout_)))
+  {
+    error = "time parametrization action server '" +
+            node_->get_parameter("time_parametrization_action").as_string() + "' not available";
+    return false;
+  }
+
+  // Send all the requests at once: the pieces are independent.
+  using GoalHandleTp = rclcpp_action::ClientGoalHandle<TimeParametrizationAction>;
+  std::vector<std::shared_future<GoalHandleTp::SharedPtr>> goal_futures;
+  for (const Piece& piece : pieces)
+  {
+    TimeParametrizationAction::Goal tp_goal;
+    auto& plan = tp_goal.unparametrized_motion_plan_response;
+    plan.group_name = group_name_;
+    plan.trajectory_start.joint_state.name = joint_names_;
+    plan.trajectory_start.joint_state.position.assign(piece.points.front().data(),
+                                                      piece.points.front().data() + piece.points.front().size());
+    auto& traj = plan.trajectory.joint_trajectory;
+    traj.joint_names = joint_names_;
+    for (const Eigen::VectorXd& q : piece.points)
+    {
+      trajectory_msgs::msg::JointTrajectoryPoint p;
+      p.positions.assign(q.data(), q.data() + q.size());
+      traj.points.push_back(p);
+    }
+    tp_goal.max_velocity_scaling_factor =
+        piece.surface ? goal.surface_velocity_scaling : goal.free_motion_velocity_scaling;
+    tp_goal.max_acceleration_scaling_factor =
+        piece.surface ? goal.surface_acceleration_scaling : goal.free_motion_acceleration_scaling;
+    goal_futures.push_back(time_parametrization_client_->async_send_goal(tp_goal));
+  }
+
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::duration<double>(time_parametrization_timeout_);
+  // Waits for a future, stopping if the goal is canceled or the deadline expires.
+  auto wait = [&](auto& future) {
+    while (!waitFor(future, 0.05))
+    {
+      if (gh->is_canceling() || !rclcpp::ok() || std::chrono::steady_clock::now() > deadline)
+        return false;
+    }
+    return true;
+  };
+
+  std::vector<GoalHandleTp::SharedPtr> handles;
+  for (auto& f : goal_futures)
+  {
+    if (!wait(f) || !f.get())
+    {
+      error = "time parametrization goal rejected (or not answered)";
+      for (auto& h : handles)
+        time_parametrization_client_->async_cancel_goal(h);
+      return false;
+    }
+    handles.push_back(f.get());
+  }
+
+  double t_offset = 0.0;
+  for (size_t p = 0; p < handles.size(); p++)
+  {
+    publishFeedback(p, "retiming path " + std::to_string(pieces.at(p).index));
+    auto result_future = time_parametrization_client_->async_get_result(handles.at(p));
+    if (!wait(result_future))
+    {
+      error = gh->is_canceling() ? "canceled" : "time parametrization timeout";
+      for (size_t q = p; q < handles.size(); q++)
+        time_parametrization_client_->async_cancel_goal(handles.at(q));
+      return false;
+    }
+    const std::string piece_name = "path " + std::to_string(pieces.at(p).index);
+    const auto wrapped = result_future.get();
+    if (wrapped.code != rclcpp_action::ResultCode::SUCCEEDED || !wrapped.result ||
+        wrapped.result->motion_plan_response.error_code.val != moveit_msgs::msg::MoveItErrorCodes::SUCCESS)
+    {
+      error = "time parametrization of " + piece_name + " failed (MoveIt error code " +
+              std::to_string(wrapped.result ? wrapped.result->motion_plan_response.error_code.val : 0) + ")";
+      return false;
+    }
+    const auto& piece_traj = wrapped.result->motion_plan_response.trajectory.joint_trajectory;
+    if (piece_traj.points.empty())
+    {
+      error = "time parametrization of " + piece_name + " returned an empty trajectory";
+      return false;
+    }
+
+    // The server may order the joints differently: map them to joint_names_.
+    std::vector<size_t> perm(joint_names_.size());
+    for (size_t j = 0; j < joint_names_.size(); j++)
+    {
+      auto it = std::find(piece_traj.joint_names.begin(), piece_traj.joint_names.end(), joint_names_.at(j));
+      if (it == piece_traj.joint_names.end())
+      {
+        error = "time parametrization returned a trajectory without joint " + joint_names_.at(j);
+        return false;
+      }
+      perm.at(j) = static_cast<size_t>(it - piece_traj.joint_names.begin());
+    }
+    auto permute = [&perm](const std::vector<double>& v) {
+      std::vector<double> out;
+      if (v.empty())
+        return out;
+      out.reserve(perm.size());
+      for (size_t idx : perm)
+        out.push_back(idx < v.size() ? v.at(idx) : 0.0);
+      return out;
+    };
+
+    // The first point of a piece is the last point of the previous one (both at rest): skip it.
+    for (size_t k = (p == 0 ? 0 : 1); k < piece_traj.points.size(); k++)
+    {
+      const auto& src = piece_traj.points.at(k);
+      trajectory_msgs::msg::JointTrajectoryPoint point;
+      point.positions = permute(src.positions);
+      point.velocities = permute(src.velocities);
+      point.accelerations = permute(src.accelerations);
+      point.time_from_start =
+          rclcpp::Duration::from_seconds(t_offset + rclcpp::Duration(src.time_from_start).seconds());
+      timed.points.push_back(point);
+    }
+    t_offset += rclcpp::Duration(piece_traj.points.back().time_from_start).seconds();
+  }
+
+  RCLCPP_INFO(node_->get_logger(), "compute_joint_trajectory: %zu paths, %zu points, %.2f s", pieces.size(),
+              timed.points.size(), t_offset);
+  return true;
+}
+
+void ComputeJointPathServer::publishDisplayTrajectory(const trajectory_msgs::msg::JointTrajectory& trajectory,
+                                                      const Eigen::VectorXd& q_start, bool timed)
+{
   moveit_msgs::msg::DisplayTrajectory display;
   display.model_id = robot_model_->getName();
   display.trajectory_start.joint_state.name = joint_names_;
@@ -559,13 +900,17 @@ void ComputeJointPathServer::publishDisplayTrajectory(const trajectory_msgs::msg
 
   moveit_msgs::msg::RobotTrajectory robot_trajectory;
   robot_trajectory.joint_trajectory = trajectory;
-  // The path starts from the current configuration.
-  trajectory_msgs::msg::JointTrajectoryPoint start;
-  start.positions = display.trajectory_start.joint_state.position;
-  auto& points = robot_trajectory.joint_trajectory.points;
-  points.insert(points.begin(), start);
-  for (size_t k = 0; k < points.size(); k++)
-    points.at(k).time_from_start = rclcpp::Duration::from_seconds(static_cast<double>(k) * display_time_step_);
+  if (!timed)
+  {
+    // Untimed path: it does not contain the current configuration, and the timing is fake
+    // (display_time_step between consecutive points), only used by Rviz to animate it.
+    trajectory_msgs::msg::JointTrajectoryPoint start;
+    start.positions = display.trajectory_start.joint_state.position;
+    auto& points = robot_trajectory.joint_trajectory.points;
+    points.insert(points.begin(), start);
+    for (size_t k = 0; k < points.size(); k++)
+      points.at(k).time_from_start = rclcpp::Duration::from_seconds(static_cast<double>(k) * display_time_step_);
+  }
 
   display.trajectory.push_back(robot_trajectory);
   display_pub_->publish(display);
@@ -633,12 +978,20 @@ void ComputeJointPathServer::execute(const std::shared_ptr<GoalHandle> gh)
   for (uint32_t idx : goal->jump_indices)
     segment_start.at(idx) = true;
 
+  std::string planner_name;
+  const MultigoalClient::SharedPtr multigoal_client = selectMultigoalClient(planner_name, error);
+  if (!multigoal_client)
+    return abort(error);
+  RCLCPP_INFO(node_->get_logger(), "free motions planned by %s", planner_name.c_str());
+
   graph::core::CollisionCheckerPtr checker = std::make_shared<graph::collision_check::ParallelMoveitCollisionChecker>(
       planning_scene_, group_name_, graph_logger_, checker_threads_, checker_resolution_);
 
-  auto planner = [this, gh](const Eigen::VectorXd& q_from, const std::vector<Eigen::VectorXd>& goals,
-                            std::vector<Eigen::VectorXd>& free_path, size_t& goal_index) {
-    return planMultigoal(q_from, goals, free_path, goal_index, gh);
+  auto planner = [this, gh, multigoal_client, planner_name](const Eigen::VectorXd& q_from,
+                                                            const std::vector<Eigen::VectorXd>& goals,
+                                                            std::vector<Eigen::VectorXd>& free_path,
+                                                            size_t& goal_index) {
+    return planMultigoal(multigoal_client, planner_name, q_from, goals, free_path, goal_index, gh);
   };
   JointPathBuilder builder(checker, lower_bound_, upper_bound_, node_->get_logger().get_child("builder"), planner,
                            builder_options_);
@@ -671,12 +1024,17 @@ void ComputeJointPathServer::execute(const std::shared_ptr<GoalHandle> gh)
   }
   result->pose_indices.assign(path.pose_indices.begin(), path.pose_indices.end());
   result->skipped_indices = path.skipped_indices;
-  result->success = true;
   result->message = path.message;
 
-  RCLCPP_INFO(node_->get_logger(), "compute_joint_path: %zu points, %zu poses skipped",
-              result->trajectory.points.size(), result->skipped_indices.size());
-  publishDisplayTrajectory(result->trajectory, q_start);
+  splitPath(q_start, path, result->paths, result->path_types);
+  for (auto& p : result->paths)
+    p.header = result->trajectory.header;
+
+  RCLCPP_INFO(node_->get_logger(), "compute_joint_path: %zu points, %zu paths, %zu poses skipped",
+              result->trajectory.points.size(), result->paths.size(), result->skipped_indices.size());
+
+  result->success = true;
+  publishDisplayTrajectory(result->trajectory, q_start, false);
   gh->succeed(result);
 }
 

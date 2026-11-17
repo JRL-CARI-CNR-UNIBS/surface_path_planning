@@ -30,6 +30,7 @@ find_package(trajectory_msgs REQUIRED)
 find_package(ik_solver_msgs REQUIRED)
 find_package(surface_path_planning_msgs REQUIRED)
 find_package(parallel_multigoal_planner_msgs REQUIRED)
+find_package(time_parametrization_msgs REQUIRED)
 # uncomment the following section in order to fill in
 # further dependencies manually.
 # find_package(<dependency> REQUIRED)
@@ -83,7 +84,7 @@ target_link_libraries(surface_path_planning
     graph_display::graph_display
     moveit_collision_checker::moveit_collision_checker
 )
-target_link_libraries(surface_path_planning PUBLIC ${rclcpp_action_TARGETS} ${ament_index_cpp_TARGETS} ${sensor_msgs_TARGETS} ${trajectory_msgs_TARGETS} ${ik_solver_msgs_TARGETS} ${surface_path_planning_msgs_TARGETS} ${parallel_multigoal_planner_msgs_TARGETS} ${moveit_msgs_TARGETS} ${ROS_DEPS_TARGETS})
+target_link_libraries(surface_path_planning PUBLIC ${rclcpp_action_TARGETS} ${ament_index_cpp_TARGETS} ${sensor_msgs_TARGETS} ${trajectory_msgs_TARGETS} ${ik_solver_msgs_TARGETS} ${surface_path_planning_msgs_TARGETS} ${parallel_multigoal_planner_msgs_TARGETS} ${time_parametrization_msgs_TARGETS} ${moveit_msgs_TARGETS} ${ROS_DEPS_TARGETS})
 # Create an alias for the library to link against easily
 add_library(surface_path_planning::surface_path_planning ALIAS surface_path_planning)
 

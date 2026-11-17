@@ -3,18 +3,20 @@
 # SPDX-License-Identifier: Apache-2.0
 # Authors: Manuel Beschi <manuel.beschi@unibs.it>, Elisa Zappa
 """
-Example client of the compute_joint_path action.
+Example client of the compute_joint_path and compute_joint_trajectory actions.
 
 1. Calls the compute_trajectory service of surface_raster_planner (a mesh must already be loaded).
-2. Sends the resulting PoseArray and jump_indices to the compute_joint_path action.
-3. Sends the joint path to the compute_joint_trajectory action (time_parametrization package, TOTG)
-   to compute the timed trajectory.
+2. Sends the resulting PoseArray and jump_indices to the compute_joint_path action, which returns
+   the joint path split into surface / free-motion paths.
+3. Sends the paths to the compute_joint_trajectory action, which retimes each of them (TOTG) and
+   appends them in one trajectory.
 4. Executes the trajectory with MoveIt (execute_trajectory action of move_group).
-The compute_joint_path server publishes the path for Rviz on /compute_joint_path/display_path.
+The server publishes the path and then the trajectory for Rviz on /compute_joint_path/display_path.
 
 ROS parameters:
-  scaling_factor (double, default 0.1): velocity and acceleration scaling factor, in (0, 1]
-  group_name (string, default ur_robot): MoveIt planning group
+  scaling_factor (double, default 0.1): velocity and acceleration scaling factor of the surface
+    paths, in (0, 1]
+  free_motion_scaling_factor (double, default: scaling_factor): the same for the free-motion paths
   execute (bool, default true): false to stop after the time parametrization
 
 Example:
@@ -28,15 +30,11 @@ import sys
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.node import Node
-from rclpy.wait_for_message import wait_for_message
 
 from moveit_msgs.action import ExecuteTrajectory
-from moveit_msgs.msg import MotionPlanResponse, MoveItErrorCodes
-from sensor_msgs.msg import JointState
-from trajectory_msgs.msg import JointTrajectoryPoint
-from surface_path_planning_msgs.action import ComputeJointPath
+from moveit_msgs.msg import MoveItErrorCodes
+from surface_path_planning_msgs.action import ComputeJointPath, ComputeJointTrajectory
 from surface_raster_planner_msgs.srv import ComputeTrajectory
-from time_parametrization_msgs.action import ApplyTimeParametrization
 
 
 def call_action(node, client, goal, feedback_callback=None):
@@ -55,9 +53,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--raster-service', default='/raster_planner_node/compute_trajectory')
     parser.add_argument('--action', default='/compute_joint_path')
-    parser.add_argument('--time-parametrization-action', default='/compute_joint_trajectory')
+    parser.add_argument('--trajectory-action', default='/compute_joint_trajectory')
     parser.add_argument('--execute-action', default='/execute_trajectory')
-    parser.add_argument('--joint-states-topic', default='/joint_states')
     parser.add_argument('--row-step', type=float, default=0.02, help='[m] distance between raster rows')
     parser.add_argument('--keep-tool-orientation', action='store_true')
     parser.add_argument('--planning-frame', default='open_tip', help='robot frame that must follow the poses')
@@ -68,11 +65,12 @@ def main():
     rclpy.init()
     node = Node('send_raster_to_joint_path')
     scaling_factor = node.declare_parameter('scaling_factor', 0.1).value
-    group_name = node.declare_parameter('group_name', 'ur_robot').value
+    free_motion_scaling_factor = node.declare_parameter('free_motion_scaling_factor', scaling_factor).value
     execute = node.declare_parameter('execute', True).value
-    if not 0.0 < scaling_factor <= 1.0:
-        node.get_logger().error(f'scaling_factor must be in (0, 1], got {scaling_factor}')
-        return 1
+    for name, value in (('scaling_factor', scaling_factor), ('free_motion_scaling_factor', free_motion_scaling_factor)):
+        if not 0.0 < value <= 1.0:
+            node.get_logger().error(f'{name} must be in (0, 1], got {value}')
+            return 1
 
     # 1) Raster path
     raster = node.create_client(ComputeTrajectory, args.raster_service)
@@ -114,54 +112,32 @@ def main():
         node.get_logger().error(f'compute_joint_path failed: {result.message}')
         return 1
     reached = sum(1 for i in result.pose_indices if i >= 0)
-    node.get_logger().info(f'{result.message}: {len(result.trajectory.points)} points, '
+    node.get_logger().info(f'{result.message}: {len(result.trajectory.points)} points, {len(result.paths)} paths, '
                            f'{reached} poses reached, skipped {list(result.skipped_indices)}')
 
-    # 3) Time parametrization
-    tp_client = ActionClient(node, ApplyTimeParametrization, args.time_parametrization_action)
-    if not tp_client.wait_for_server(timeout_sec=5.0):
-        node.get_logger().error(f'action {args.time_parametrization_action} not available')
+    # 3) Time parametrization of the paths
+    traj_client = ActionClient(node, ComputeJointTrajectory, args.trajectory_action)
+    if not traj_client.wait_for_server(timeout_sec=5.0):
+        node.get_logger().error(f'action {args.trajectory_action} not available')
         return 1
-
-    path = result.trajectory
-    if not path.points:
-        node.get_logger().error('empty joint path, nothing to parametrize')
-        return 1
-    # The joint path does not contain the current configuration: prepend it, otherwise MoveIt
-    # rejects the trajectory because its first point is not the robot state.
-    ok, joint_state = wait_for_message(JointState, node, args.joint_states_topic, time_to_wait=5.0)
-    if not ok:
-        node.get_logger().error(f'no message on {args.joint_states_topic}')
-        return 1
-    current = dict(zip(joint_state.name, joint_state.position))
-    missing = [j for j in path.joint_names if j not in current]
-    if missing:
-        node.get_logger().error(f'joints {missing} not in {args.joint_states_topic}')
-        return 1
-    q_now = [current[j] for j in path.joint_names]
-    path.points.insert(0, JointTrajectoryPoint(positions=q_now))
-
-    unparametrized = MotionPlanResponse()
-    unparametrized.group_name = group_name
-    unparametrized.trajectory.joint_trajectory = path
-    unparametrized.trajectory_start.joint_state = JointState(name=list(path.joint_names), position=q_now)
-    tp_goal = ApplyTimeParametrization.Goal()
-    tp_goal.unparametrized_motion_plan_response = unparametrized
-    tp_goal.max_velocity_scaling_factor = scaling_factor
-    tp_goal.max_acceleration_scaling_factor = scaling_factor
-
-    accepted, wrapped = call_action(node, tp_client, tp_goal)
+    traj_goal = ComputeJointTrajectory.Goal()
+    traj_goal.paths = result.paths
+    traj_goal.path_types = result.path_types
+    traj_goal.surface_velocity_scaling = scaling_factor
+    traj_goal.surface_acceleration_scaling = scaling_factor
+    traj_goal.free_motion_velocity_scaling = free_motion_scaling_factor
+    traj_goal.free_motion_acceleration_scaling = free_motion_scaling_factor
+    accepted, wrapped = call_action(node, traj_client, traj_goal)
     if not accepted:
-        node.get_logger().error('time parametrization goal rejected (see the server log)')
+        node.get_logger().error('compute_joint_trajectory goal rejected (see the server log)')
         return 1
-    tp_res = wrapped.result.motion_plan_response
-    if tp_res.error_code.val != MoveItErrorCodes.SUCCESS:
-        node.get_logger().error(f'time parametrization failed (error code {tp_res.error_code.val})')
+    if not wrapped.result.success:
+        node.get_logger().error(f'compute_joint_trajectory failed: {wrapped.result.message}')
         return 1
-    timed = tp_res.trajectory
+    timed = wrapped.result.trajectory
     duration = timed.joint_trajectory.points[-1].time_from_start
     node.get_logger().info(f'trajectory: {len(timed.joint_trajectory.points)} points, '
-                           f'{duration.sec + duration.nanosec * 1e-9:.2f} s (scaling factor {scaling_factor})')
+                           f'{duration.sec + duration.nanosec * 1e-9:.2f} s')
 
     # 4) Execution with MoveIt
     if execute:

@@ -1,8 +1,8 @@
 # ROS parameters of the time parametrization server (package time_parametrization).
-# It retimes the joint path computed by compute_joint_path with MoveIt TOTG.
-compute_joint_trajectory:
+# Each path of the compute_joint_trajectory action is retimed here with MoveIt TOTG.
+apply_time_parametrization:
   ros__parameters:
-    action_name: compute_joint_trajectory    # i.e. /compute_joint_trajectory
+    action_name: apply_time_parametrization  # i.e. /apply_time_parametrization
     robot_description_param: robot_description
     default_group_name: ur_robot             # MoveIt planning group (same as compute_joint_path)
 

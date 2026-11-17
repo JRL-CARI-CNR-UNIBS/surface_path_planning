@@ -143,7 +143,8 @@ The server publishes every computed path on `/compute_joint_path/display_path`
 2. *Add* → **PoseArray** on `/raster_planner_node/poses`, to compare with the raster.
 
 The animation uses a fake timing of `display_time_step` seconds (default 1 s) between consecutive
-points: it is only a preview, the real timing is computed by the time-parametrization node. For
+points: it is only a preview, the real timing is computed by the `compute_joint_trajectory` action
+(which then publishes the timed trajectory on the same topic). For
 a faster preview set, for example, `ros2 param set /compute_joint_path display_time_step 0.05`
 before sending the goal (or use *State Display Time* in the Rviz display).
 
@@ -169,8 +170,26 @@ goal.deviation_distance.z = 0.05                 # in the tool frame
 ```
 
 The result contains `trajectory` (positions only), `pose_indices` (which pose each point
-reaches, -1 for auxiliary points) and `skipped_indices`. Use `pose_indices` to apply the
-process speed only between two consecutive surface points.
+reaches, -1 for auxiliary points), `skipped_indices`, and the same path split at every jump in
+`paths` / `path_types` (`SURFACE` or `FREE_MOTION`, the first path starts at the robot
+configuration).
+
+To get a timed trajectory, send the paths to the `compute_joint_trajectory` action
+(`surface_path_planning_msgs/action/ComputeJointTrajectory`), with separate scaling factors for
+the surface and the free motions:
+
+```python
+traj_goal = ComputeJointTrajectory.Goal()
+traj_goal.paths = path_result.paths
+traj_goal.path_types = path_result.path_types
+traj_goal.surface_velocity_scaling = 0.1         # (0, 1]
+traj_goal.surface_acceleration_scaling = 0.1
+traj_goal.free_motion_velocity_scaling = 0.3
+traj_goal.free_motion_acceleration_scaling = 0.3
+```
+
+Each path is retimed separately (the robot stops at the end of every path) and the result
+`trajectory` (`moveit_msgs/RobotTrajectory`) can be sent directly to `/execute_trajectory`.
 
 ---
 

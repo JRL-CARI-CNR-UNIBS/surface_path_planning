@@ -105,14 +105,21 @@ This package is intended for robotic applications involving dense surface trajec
 
 ---
 
-## compute_joint_path action server
+## compute_joint_path and compute_joint_trajectory action servers
 
-`compute_joint_path_node` converts the tool `PoseArray` produced by
-[`surface_raster_planner`](../surface_raster_planner) into a joint-space path, **without time
-parametrization** (timing and velocities are computed downstream).
+`compute_joint_path_node` offers two actions, called one after the other:
+
+1. `compute_joint_path` converts the tool `PoseArray` produced by
+   [`surface_raster_planner`](../surface_raster_planner) into a joint-space path, without time
+   parametrization, also split into surface / free-motion paths;
+2. `compute_joint_trajectory` retimes that set of paths (one time parametrization request per path)
+   and appends them in one trajectory ready to be executed.
 
 ```
-surface_raster_planner ──PoseArray + jump_indices──▶ compute_joint_path ──JointTrajectory──▶ time parametrization ──▶ execution
+surface_raster_planner ──PoseArray + jump_indices──▶ compute_joint_path ──paths──▶ compute_joint_trajectory ──RobotTrajectory──▶ execution
+                                                      │                              │
+                                       parallel_multigoal_planner |        apply_time_parametrization (TOTG),
+                                       prm_multigoal_planner (free motions)   one request per path
 ```
 
 A step-by-step tutorial is in [`docs/TUTORIAL.md`](docs/TUTORIAL.md).
@@ -134,14 +141,33 @@ Action `compute_joint_path` (`surface_path_planning_msgs/action/ComputeJointPath
 | `trajectory` | `trajectory_msgs/JointTrajectory` with positions only (`time_from_start` = 0). |
 | `pose_indices` | For each trajectory point, the reached pose index, or -1 for auxiliary points (free motions, leave/approach points). |
 | `skipped_indices` | Poses skipped because no feasible configuration was found. |
+| `paths`, `path_types` | The same path, preceded by the robot configuration and split at the first and at the last pose of every continuous run of surface poses (i.e. at every jump). `SURFACE` paths and `FREE_MOTION` paths (leave + transfer + approach) alternate; each one starts at the end of the previous one. Input of `compute_joint_trajectory`. |
 
 The path is also published for Rviz on `/compute_joint_path/display_path`
 (`moveit_msgs/DisplayTrajectory`, latched), starting from the robot configuration and with a fake
 time step of `display_time_step` seconds between points: add a MoveIt **Trajectory** display on
 that topic to animate it.
 
-Feedback reports the pose being processed and a status string. Goals can be canceled. Only one
-goal at a time is accepted.
+Action `compute_joint_trajectory` (`surface_path_planning_msgs/action/ComputeJointTrajectory`):
+
+| Goal field | Description |
+|---|---|
+| `paths`, `path_types` | Consecutive paths (usually `paths`, `path_types` of the `compute_joint_path` result). Only positions are used; joints are matched by name. |
+| `surface_velocity_scaling`, `surface_acceleration_scaling` | Scaling factors of the `SURFACE` paths, in (0, 1] (other values mean 1). |
+| `free_motion_velocity_scaling`, `free_motion_acceleration_scaling` | Scaling factors of the `FREE_MOTION` paths. |
+
+| Result field | Description |
+|---|---|
+| `success`, `message` | Outcome. |
+| `trajectory` | `moveit_msgs/RobotTrajectory` with positions, velocities, accelerations and `time_from_start`, ready for `/execute_trajectory`. Its points are resampled by TOTG. |
+
+Each path is sent as a separate request to `time_parametrization_action` (all requests at once) and
+the results are appended, so the robot stops at the end of every path. The goal is aborted if a
+path does not start at the end of the previous one or if a request fails. The trajectory is
+published on the same Rviz topic. Feedback reports the path being retimed.
+
+Feedback reports the pose being processed and a status string. Goals can be canceled. Each action
+accepts one goal at a time; the two actions can run at the same time.
 
 ### Algorithm
 
@@ -177,28 +203,34 @@ itself is **not** a collision object unless it is added to the planning scene.
 
 ```bash
 ros2 launch surface_path_planning compute_joint_path.launch.py
+# free motions with the persistent Lazy PRM* planner:
+ros2 launch surface_path_planning compute_joint_path.launch.py multigoal_planner:=prm_multigoal_planner
 ```
 
 It starts the `ur_ik_solver` node (`start_ik_solver:=false` if it is already running),
-`collision_checker_server` and `parallel_multigoal_planner` (`start_multigoal_planner:=false` if they
-are already running), the `compute_joint_path` action server and the `compute_joint_trajectory` time parametrization server
-(package `time_parametrization`, MoveIt TOTG, configured in `config/compute_joint_trajectory.yaml`).
+`collision_checker_server` and the planner chosen with `multigoal_planner` (`start_multigoal_planner:=false` if they
+are already running), the `compute_joint_path` node (both actions) and the `apply_time_parametrization` server
+(package `time_parametrization`, MoveIt TOTG, configured in `config/apply_time_parametrization.yaml`).
 Robot (or fake hardware) and move_group must already be running.
 
-`scripts/send_raster_to_joint_path.py` runs the full chain: raster path → joint path →
-time parametrization → execution with MoveIt (`/execute_trajectory`). ROS parameters of the script:
-`scaling_factor` (velocity and acceleration scaling, default 0.1), `group_name` (default `ur_robot`),
-`execute` (default `true`; `false` stops after the time parametrization).
+`scripts/send_raster_to_joint_path.py` runs the full chain: raster path → `compute_joint_path` →
+`compute_joint_trajectory` → execution with MoveIt (`/execute_trajectory`). ROS parameters of the script:
+`scaling_factor` (velocity and acceleration scaling of the surface paths, default 0.1),
+`free_motion_scaling_factor` (default: `scaling_factor`), `execute` (default `true`; `false` stops
+after the time parametrization).
 
 | Launch argument | Default | Description |
 |---|---|---|
 | `params` | `config/compute_joint_path.yaml` | ROS parameters of the server |
-| `time_parametrization_params` | `config/compute_joint_trajectory.yaml` | ROS parameters of the time parametrization server |
+| `start_time_parametrization` | `true` | start the `apply_time_parametrization` server (`false` if it is already running, e.g. started by `picking_example`) |
+| `time_parametrization_params` | `config/apply_time_parametrization.yaml` | ROS parameters of the time parametrization server |
 | `joint_limits` | `''` | MoveIt `joint_limits.yaml` of the robot, used by the time parametrization (empty: URDF limits, accelerations = 5 × max velocity) |
+| `multigoal_planner` | `parallel_multigoal_planner` | free-motion planner started and used by the server: `parallel_multigoal_planner` or `prm_multigoal_planner` |
+| `prm_params` | `prm_multigoal_planner/config/prm_multigoal_planner.yaml` | ROS 2 parameters of `prm_multigoal_planner` |
 | `mirrt_star_params` | `config/mirrt_star.yaml` | ROS 2 parameters of the mirrt* solver of `parallel_multigoal_planner` (prefix `mirrt_star.`) |
 | `ik_config` | `config/compute_joint_path_ik.yaml` | ik_solver configuration (including `task_redundant`) |
 | `start_ik_solver` | `true` | start the ik_solver node |
-| `start_multigoal_planner` | `true` | start `collision_checker_server` and `parallel_multigoal_planner` |
+| `start_multigoal_planner` | `true` | start `collision_checker_server` and the selected multigoal planner |
 | `ik_solver_ns` | `ur_ik_solver` | ik_solver namespace used by `parallel_multigoal_planner` (no leading `/`) |
 | `collision_checker_params` | `collision_checker_server/config/collision_checker_params.yaml` | `group_name`, `padding`, `scaling` of the free-motion collision checker |
 
@@ -217,11 +249,15 @@ time parametrization → execution with MoveIt (`/execute_trajectory`). ROS para
 | `joint_state_timeout` | 5.0 | [s] |
 | `max_joint_step` | 0.35 | [rad] max joint motion (infinity norm) between consecutive surface points |
 | `max_deviation_joint_step` | 0.8 | [rad] max joint motion between a surface point and its leave/approach point |
-| `multigoal_action` | `/parallel_multigoal_plan` | action of `parallel_multigoal_planner` |
+| `multigoal_planner` | `parallel_multigoal_planner` | free-motion planner: `parallel_multigoal_planner` or `prm_multigoal_planner` (read at every goal) |
+| `parallel_multigoal_action` | `/parallel_multigoal_plan` | action of `parallel_multigoal_planner` |
+| `prm_multigoal_action` | `/prm_multigoal_plan` | action of `prm_multigoal_planner` |
 | `multigoal_planning_time` | 5.0 | [s] `allowed_planning_time` of one free-motion request |
-| `collision_check_service` | `/collision_check` | collision checker of `parallel_multigoal_planner`; when a request fails it is called with `detailed = true` and the colliding links are logged |
+| `collision_check_service` | `/collision_check` | collision checker of `parallel_multigoal_planner`; when a request fails it is called (if running) with `detailed = true` and the colliding links are logged |
 | `max_multigoal_goals` | 20 | candidate configurations sent in one free-motion request |
 | `max_backtracking_poses` | 20 | poses that can be dropped when the surface cannot be left |
+| `time_parametrization_action` | `/apply_time_parametrization` | `time_parametrization_msgs/ApplyTimeParametrization` action used by `compute_joint_trajectory` |
+| `time_parametrization_timeout` | 30.0 | [s] for all the paths of one `compute_joint_trajectory` goal |
 | `display_topic` | `~/display_path` | Rviz topic (`moveit_msgs/DisplayTrajectory`) |
 | `display_time_step` | 1.0 | [s] time between points in the displayed path (visualization only) |
 | `checker_resolution` | 0.02 | [rad] discretization of the straight joint motions |

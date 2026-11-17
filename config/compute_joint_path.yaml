@@ -15,15 +15,21 @@ compute_joint_path:
     # Path construction
     max_joint_step: 0.35                     # [rad] max joint motion (inf norm) between two consecutive surface points
     max_deviation_joint_step: 0.8            # [rad] max joint motion (inf norm) between a surface point and its leave/approach point
-    multigoal_action: /parallel_multigoal_plan
+    multigoal_planner: parallel_multigoal_planner   # free-motion planner: parallel_multigoal_planner | prm_multigoal_planner (read at every goal)
+    parallel_multigoal_action: /parallel_multigoal_plan
+    prm_multigoal_action: /prm_multigoal_plan
     multigoal_planning_time: 5.0             # [s] allowed_planning_time of one multigoal request
     collision_check_service: /collision_check   # planner collision checker, queried (detailed) when a request fails
     max_multigoal_goals: 20                  # candidate configurations sent in one multigoal request
     max_backtracking_poses: 20               # surface poses that can be dropped when the surface cannot be left
 
+    # compute_joint_trajectory action: each path is retimed by this time parametrization server (TOTG)
+    time_parametrization_action: /apply_time_parametrization
+    time_parametrization_timeout: 30.0       # [s] for all the paths of one goal
+
     # Rviz visualization (moveit_msgs/DisplayTrajectory, latched)
     display_topic: ~/display_path            # i.e. /compute_joint_path/display_path
-    display_time_step: 1.0                   # [s] fake time between consecutive points, only for the animation
+    display_time_step: 1.0                   # [s] fake time between consecutive path points, only for the animation
 
     # Collision checking
     checker_resolution: 0.02                 # [rad] discretization of the straight joint motions

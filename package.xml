@@ -38,11 +38,12 @@
   <depend version_gte="0.1.0">ik_solver_msgs</depend>
   <depend>surface_path_planning_msgs</depend>
   <depend>parallel_multigoal_planner_msgs</depend>
+  <depend>time_parametrization_msgs</depend>
   <exec_depend>parallel_multigoal_planner</exec_depend>
+  <exec_depend>prm_multigoal_planner</exec_depend>
   <exec_depend>collision_checker_server</exec_depend>
   <exec_depend>surface_raster_planner_msgs</exec_depend>
   <exec_depend>time_parametrization</exec_depend>
-  <exec_depend>time_parametrization_msgs</exec_depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_common</test_depend>
