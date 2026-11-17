@@ -161,7 +161,7 @@ Action `compute_joint_trajectory` (`surface_path_planning_msgs/action/ComputeJoi
 | `success`, `message` | Outcome. |
 | `trajectory` | `moveit_msgs/RobotTrajectory` with positions, velocities, accelerations and `time_from_start`, ready for `/execute_trajectory`. Its points are resampled by TOTG. |
 
-Each path is sent as a separate request to `time_parametrization_action` (all requests at once) and
+Each path is sent as a separate request to `time_parametrization_action` (one request at a time) and
 the results are appended, so the robot stops at the end of every path. The goal is aborted if a
 path does not start at the end of the previous one or if a request fails. The trajectory is
 published on the same Rviz topic. Feedback reports the path being retimed.

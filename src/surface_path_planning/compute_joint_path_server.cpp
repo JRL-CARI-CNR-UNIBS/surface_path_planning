@@ -769,32 +769,6 @@ bool ComputeJointPathServer::timeParametrize(const TrajectoryAction::Goal& goal,
     return false;
   }
 
-  // Send all the requests at once: the pieces are independent.
-  using GoalHandleTp = rclcpp_action::ClientGoalHandle<TimeParametrizationAction>;
-  std::vector<std::shared_future<GoalHandleTp::SharedPtr>> goal_futures;
-  for (const Piece& piece : pieces)
-  {
-    TimeParametrizationAction::Goal tp_goal;
-    auto& plan = tp_goal.unparametrized_motion_plan_response;
-    plan.group_name = group_name_;
-    plan.trajectory_start.joint_state.name = joint_names_;
-    plan.trajectory_start.joint_state.position.assign(piece.points.front().data(),
-                                                      piece.points.front().data() + piece.points.front().size());
-    auto& traj = plan.trajectory.joint_trajectory;
-    traj.joint_names = joint_names_;
-    for (const Eigen::VectorXd& q : piece.points)
-    {
-      trajectory_msgs::msg::JointTrajectoryPoint p;
-      p.positions.assign(q.data(), q.data() + q.size());
-      traj.points.push_back(p);
-    }
-    tp_goal.max_velocity_scaling_factor =
-        piece.surface ? goal.surface_velocity_scaling : goal.free_motion_velocity_scaling;
-    tp_goal.max_acceleration_scaling_factor =
-        piece.surface ? goal.surface_acceleration_scaling : goal.free_motion_acceleration_scaling;
-    goal_futures.push_back(time_parametrization_client_->async_send_goal(tp_goal));
-  }
-
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::duration<double>(time_parametrization_timeout_);
   // Waits for a future, stopping if the goal is canceled or the deadline expires.
@@ -807,32 +781,49 @@ bool ComputeJointPathServer::timeParametrize(const TrajectoryAction::Goal& goal,
     return true;
   };
 
-  std::vector<GoalHandleTp::SharedPtr> handles;
-  for (auto& f : goal_futures)
+  // One goal at a time: the goal service of the server keeps only the last 10 requests (default
+  // services QoS) and, with many paths sent at once, the ones beyond were dropped (Fast DDS, Humble).
+  using GoalHandleTp = rclcpp_action::ClientGoalHandle<TimeParametrizationAction>;
+  double t_offset = 0.0;
+  for (size_t p = 0; p < pieces.size(); p++)
   {
-    if (!wait(f) || !f.get())
+    const Piece& piece = pieces.at(p);
+    publishFeedback(p, "retiming path " + std::to_string(piece.index));
+    TimeParametrizationAction::Goal tp_goal;
+    auto& plan = tp_goal.unparametrized_motion_plan_response;
+    plan.group_name = group_name_;
+    plan.trajectory_start.joint_state.name = joint_names_;
+    plan.trajectory_start.joint_state.position.assign(piece.points.front().data(),
+                                                      piece.points.front().data() + piece.points.front().size());
+    auto& traj = plan.trajectory.joint_trajectory;
+    traj.joint_names = joint_names_;
+    for (const Eigen::VectorXd& q : piece.points)
     {
-      error = "time parametrization goal rejected (or not answered)";
-      for (auto& h : handles)
-        time_parametrization_client_->async_cancel_goal(h);
+      trajectory_msgs::msg::JointTrajectoryPoint point;
+      point.positions.assign(q.data(), q.data() + q.size());
+      traj.points.push_back(point);
+    }
+    tp_goal.max_velocity_scaling_factor =
+        piece.surface ? goal.surface_velocity_scaling : goal.free_motion_velocity_scaling;
+    tp_goal.max_acceleration_scaling_factor =
+        piece.surface ? goal.surface_acceleration_scaling : goal.free_motion_acceleration_scaling;
+
+    auto goal_future = time_parametrization_client_->async_send_goal(tp_goal);
+    if (!wait(goal_future) || !goal_future.get())
+    {
+      error = gh->is_canceling() ? "canceled" : "time parametrization goal of path " +
+                                                    std::to_string(piece.index) + " rejected (or not answered)";
       return false;
     }
-    handles.push_back(f.get());
-  }
-
-  double t_offset = 0.0;
-  for (size_t p = 0; p < handles.size(); p++)
-  {
-    publishFeedback(p, "retiming path " + std::to_string(pieces.at(p).index));
-    auto result_future = time_parametrization_client_->async_get_result(handles.at(p));
+    const GoalHandleTp::SharedPtr handle = goal_future.get();
+    auto result_future = time_parametrization_client_->async_get_result(handle);
     if (!wait(result_future))
     {
       error = gh->is_canceling() ? "canceled" : "time parametrization timeout";
-      for (size_t q = p; q < handles.size(); q++)
-        time_parametrization_client_->async_cancel_goal(handles.at(q));
+      time_parametrization_client_->async_cancel_goal(handle);
       return false;
     }
-    const std::string piece_name = "path " + std::to_string(pieces.at(p).index);
+    const std::string piece_name = "path " + std::to_string(piece.index);
     const auto wrapped = result_future.get();
     if (wrapped.code != rclcpp_action::ResultCode::SUCCEEDED || !wrapped.result ||
         wrapped.result->motion_plan_response.error_code.val != moveit_msgs::msg::MoveItErrorCodes::SUCCESS)
