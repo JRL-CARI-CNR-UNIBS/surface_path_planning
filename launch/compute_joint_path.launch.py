@@ -99,6 +99,7 @@ def generate_launch_description():
         parameters=[{'ik_solver_ns': LaunchConfiguration('ik_solver_ns'),
                      'collision_check_service': '/collision_check'}],
         condition=IfCondition(LaunchConfiguration('start_multigoal_planner')),
+        #arguments=['--ros-args', '--log-level', 'DEBUG']
     )
 
     server = Node(
@@ -107,6 +108,7 @@ def generate_launch_description():
         name='compute_joint_path',
         output='screen',
         parameters=[LaunchConfiguration('params')],
+        #arguments=['--ros-args', '--log-level', 'compute_joint_path:=DEBUG']
     )
 
     # cnr_param_server instances must not run concurrently (they share the parameter directory):

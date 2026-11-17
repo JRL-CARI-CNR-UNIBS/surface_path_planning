@@ -6,7 +6,7 @@ parallel_multigoal_planner:
     max_distance: 1.0          # [rad] max tree-extension step
     use_kdtree: true
     extend: false              # true: extend, false: connect
-    utopia_tolerance: 0.01     # accept a solution within (1 + tol) of the utopia cost
+    utopia_tolerance: 0.2     # accept a solution within (1 + tol) of the utopia cost
     rewire_radius: 2.0         # RRT* rewiring radius (default 2 * max_distance)
     mixed_strategy: true       # blend tube-informed and plain sampling per goal
     bidirectional: true        # grow trees from start and from each goal
